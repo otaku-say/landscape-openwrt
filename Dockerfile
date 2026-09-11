@@ -23,6 +23,7 @@ RUN set -eu; \
     test -x /sbin/init; test -x /sbin/procd; \
     command -v fw4; command -v nft; command -v ip; command -v jsonfilter; \
     test -f /etc/config/dhcp; \
+    mkdir -p /var/lock; \
     chmod 0755 /etc/preinit /usr/bin/redirect_pkg_handler /usr/bin/landscape-start \
       /usr/libexec/landscape-* /etc/init.d/landscape-*; \
     printf '%s  %s\n' "$HANDLER_SHA256" /usr/bin/redirect_pkg_handler | sha256sum -c -; \

@@ -54,7 +54,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FORCE: ${{ inputs.force || false }}
-          FIRST: ${{ inputs.first_build || github.event.before == '0000000000000000000000000000000000000000' }}
+          FIRST: ${{ inputs.first_build || github.event_name == 'push' }}
         run: |
           args=()
           if [[ "$FORCE" == true ]]; then args+=(--force); fi
