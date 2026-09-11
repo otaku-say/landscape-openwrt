@@ -8,12 +8,14 @@ socket_dir=$(mktemp -d)
 server_pid=
 mkdir -p build
 cleanup() {
-    docker logs "$name" > build/smoke-docker.log 2>&1 || true
-    docker exec "$name" logread > build/smoke-openwrt.log 2>&1 || true
+    timeout 15 docker logs "$name" > build/smoke-docker.log 2>&1 || true
+    timeout 15 docker exec "$name" logread > build/smoke-openwrt.log 2>&1 || true
+    timeout 15 docker exec "$name" uci export firewall > build/smoke-uci-firewall.log 2>&1 || true
+    timeout 15 docker exec "$name" uci export dhcp > build/smoke-uci-dhcp.log 2>&1 || true
     docker exec "$name" ip -4 route > build/smoke-ipv4.log 2>&1 || true
     docker exec "$name" ip -6 route > build/smoke-ipv6.log 2>&1 || true
     docker exec "$name" nft list ruleset > build/smoke-nft.log 2>&1 || true
-    docker rm -f "$name" >/dev/null 2>&1 || true
+    docker rm -f "${name}-client" "$name" >/dev/null 2>&1 || true
     docker network rm "$network" >/dev/null 2>&1 || true
     docker volume rm "$volume" >/dev/null 2>&1 || true
     if [[ -n "$server_pid" ]]; then kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true; fi
@@ -39,8 +41,9 @@ start_container() {
         -v "$socket_dir:/ld_unix_link:ro" -v "$volume:/etc/config" "$image"
 }
 wait_healthy() {
-    for _ in {1..90}; do
-        if docker exec "$name" /usr/libexec/landscape-healthcheck; then return; fi
+    local deadline=$((SECONDS + 180))
+    while (( SECONDS < deadline )); do
+        if timeout 8 docker exec "$name" /usr/libexec/landscape-healthcheck; then return; fi
         [[ $(docker inspect -f '{{.State.Running}}' "$name") == true ]]
         sleep 2
     done
@@ -54,7 +57,7 @@ curl -gfsS --noproxy '*' --max-time 10 'http://[fd70:6c61:6e64:80::2]/' >/dev/nu
 for _ in {1..40}; do [[ ! -s "$socket_dir/enrollment.json" ]] || break; sleep 2; done
 id=$(docker inspect -f '{{.Id}}' "$name")
 python3 -c 'import json,sys; v=json.load(open(sys.argv[1])); assert sys.argv[2].startswith(v["id"]); assert v["ifindex"]>0' "$socket_dir/enrollment.json" "$id"
-docker exec "$name" sh -c '! pidof odhcpd; test "$(uci get dhcp.lan.ignore)" = 1; test "$(uci get firewall.@defaults[0].flow_offloading)" = 0'
+docker exec "$name" sh -ec '! pidof odhcpd; test "$(uci get dhcp.lan.ignore)" = 1; test "$(uci get firewall.@defaults[0].flow_offloading)" = 0'
 docker exec "$name" nft list chain inet fw4 srcnat_lan | grep 'meta nfproto ipv4.*masquerade'
 docker exec "$name" nft list chain inet fw4 srcnat_lan | grep 'meta nfproto ipv6.*masquerade'
 
@@ -63,7 +66,7 @@ docker exec "$name" nft list chain inet fw4 srcnat_lan | grep 'meta nfproto ipv6
 # Provide the return routes normally supplied by the real router's LAN topology.
 docker exec "$name" ip route add 198.18.0.2/32 via 172.30.80.3 dev eth0
 docker exec "$name" ip -6 route add fd00:dead:beef::2/128 via fd70:6c61:6e64:80::3 dev eth0
-docker run --rm --privileged --no-healthcheck --network "$network" \
+timeout 45 docker run --rm --name "${name}-client" --privileged --no-healthcheck --network "$network" \
     --ip 172.30.80.3 --ip6 fd70:6c61:6e64:80::3 \
     --entrypoint /bin/sh "$image" -ec '
       ip addr add 198.18.0.2/32 dev lo

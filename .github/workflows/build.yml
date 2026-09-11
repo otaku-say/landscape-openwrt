@@ -81,7 +81,8 @@ jobs:
           cache-to: type=gha,mode=max
       - name: Boot and test actual OpenWrt candidate
         if: steps.inputs.outputs.build == 'true'
-        run: bash scripts/smoke-test.sh landscape-openwrt:test
+        timeout-minutes: 8
+        run: bash -x scripts/smoke-test.sh landscape-openwrt:test
       - name: Publish only the tested image
         if: steps.inputs.outputs.build == 'true'
         env:
