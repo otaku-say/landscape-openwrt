@@ -60,6 +60,9 @@ docker exec "$name" nft list chain inet fw4 srcnat_lan | grep 'meta nfproto ipv6
 
 # Off-subnet source addresses force return traffic through the candidate's NAT.
 # This checks the OpenWrt forwarding path, not Landscape's tagged-flow classifier.
+# Provide the return routes normally supplied by the real router's LAN topology.
+docker exec "$name" ip route add 198.18.0.2/32 via 172.30.80.3 dev eth0
+docker exec "$name" ip -6 route add fd00:dead:beef::2/128 via fd70:6c61:6e64:80::3 dev eth0
 docker run --rm --privileged --no-healthcheck --network "$network" \
     --ip 172.30.80.3 --ip6 fd70:6c61:6e64:80::3 \
     --entrypoint /bin/sh "$image" -ec '
