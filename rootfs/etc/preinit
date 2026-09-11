@@ -1,0 +1,5 @@
+#!/bin/sh
+# Docker already provides /dev, /proc, /sys and the veth. Hardware preinit must
+# not rename interfaces, mount the host boot partition, or run bootloader upgrades.
+[ -n "${PREINIT:-}" ] || exec /sbin/init
+exit 0

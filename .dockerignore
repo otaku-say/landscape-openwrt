@@ -1,0 +1,8 @@
+.git
+.github
+tests
+__pycache__
+**/__pycache__
+build/*
+!build/redirect_pkg_handler
+!build/upstream.json

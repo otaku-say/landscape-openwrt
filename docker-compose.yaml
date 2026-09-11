@@ -1,0 +1,76 @@
+services:
+  openwrt:
+    image: ghcr.io/otaku-say/landscape-openwrt:latest
+    container_name: landscape-openwrt
+    platform: linux/amd64
+    restart: unless-stopped
+    privileged: true
+    # 必须由 OpenWrt 的 /sbin/init 保持 PID 1，不要添加 init: true。
+    labels:
+      ld_flow_edge: "true"
+    cap_add:
+      - NET_ADMIN
+      - BPF
+      - PERFMON
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    environment:
+      # 首次启动的上游 DNS；后续 DNS 设置由 LuCI/代理插件维护。
+      LAND_DNS_ADDR: "10.10.10.1"
+      LAND_REDIRECT_LOG_LEVEL: "INFO"
+    sysctls:
+      net.ipv4.conf.lo.accept_local: "1"
+      net.ipv4.conf.all.rp_filter: "0"
+      net.ipv4.conf.default.rp_filter: "0"
+      net.ipv4.ip_forward: "1"
+      net.ipv6.conf.all.disable_ipv6: "0"
+      net.ipv6.conf.default.disable_ipv6: "0"
+      net.ipv6.conf.all.forwarding: "1"
+    ports:
+      # 只绑定现有 LAN 地址，避免占用 Landscape 的 80/443。
+      - "10.10.10.1:8080:80"
+      - "10.10.10.1:8443:443"
+      - "10.10.10.1:2222:22"
+    volumes:
+      # lkit 用户改为 /root/.lkit/landscape/data/unix_link。
+      - type: bind
+        source: /root/.landscape-router/unix_link
+        target: /ld_unix_link
+        read_only: true
+        bind:
+          create_host_path: false
+      # 不持久化整个 /etc 或根目录，否则会遮住新镜像文件。
+      - openwrt-config:/etc/config
+      - openclash-data:/etc/openclash
+      - dropbear-keys:/etc/dropbear
+    networks:
+      edge:
+        ipv4_address: 172.30.80.2
+        ipv6_address: fd70:6c61:6e64:80::2
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  edge:
+    name: landscape-openwrt-edge
+    driver: bridge
+    enable_ipv6: true
+    driver_opts:
+      com.docker.network.bridge.name: ld-owrt0
+      com.docker.network.bridge.enable_ip_masquerade: "true"
+    ipam:
+      config:
+        - subnet: 172.30.80.0/24
+          gateway: 172.30.80.1
+        - subnet: fd70:6c61:6e64:80::/64
+          gateway: fd70:6c61:6e64:80::1
+
+volumes:
+  openwrt-config:
+  openclash-data:
+  dropbear-keys:

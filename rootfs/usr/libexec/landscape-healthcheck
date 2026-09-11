@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+# Local readiness only; successful Landscape enrollment is checked in handler logs.
+/etc/init.d/landscape-redirect running
+ubus call network.interface.lan status | jsonfilter -e '@.up' | grep -qx true
+ip -4 route show default dev eth0 | grep -q '^default via '
+ip -6 route show default dev eth0 | grep -q '^default via '
+nft list chain inet fw4 srcnat_lan | grep -q masquerade
+pidof uhttpd >/dev/null
