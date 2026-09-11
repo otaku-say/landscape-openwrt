@@ -24,13 +24,15 @@ RUN set -eu; \
     command -v fw4; command -v nft; command -v ip; command -v jsonfilter; \
     test -f /etc/config/dhcp; \
     mkdir -p /var/lock; \
+    rm -f /etc/uci-defaults/xxx-coremark; \
+    sed -i '\|/etc/coremark.sh|d' /etc/crontabs/root; \
     chmod 0755 /etc/preinit /usr/bin/redirect_pkg_handler /usr/bin/landscape-start \
       /usr/libexec/landscape-* /etc/init.d/landscape-*; \
     printf '%s  %s\n' "$HANDLER_SHA256" /usr/bin/redirect_pkg_handler | sha256sum -c -; \
     /usr/bin/redirect_pkg_handler --help >/dev/null; \
     /etc/init.d/landscape-prepare enable; \
     /etc/init.d/landscape-redirect enable; \
-    for service in sysctl sysntpd sysfixtime cron fstab gpio_switch led packet_steering sysfsutils turboacc; do \
+    for service in sysctl sysntpd sysfixtime fstab gpio_switch led packet_steering sysfsutils turboacc autocore autoreboot; do \
       if [ -x "/etc/init.d/$service" ]; then "/etc/init.d/$service" disable; fi; \
     done
 ENV LAND_DNS_ADDR=10.10.10.1 \

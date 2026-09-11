@@ -1,6 +1,7 @@
 #!/bin/sh
 # shellcheck shell=ash
-set -eu
+# OpenWrt's UCI shell library intentionally reads unset optional variables.
+set -e
 . /lib/functions.sh
 
 # These are namespace-local. Do not run OpenWrt's host-wide sysctl tuning.
@@ -49,7 +50,7 @@ if [ "$(uci -q get landscape.container.initialized || true)" != 1 ]; then
     uci commit landscape
 fi
 uci commit dhcp
-for service in odhcpd turboacc sysntpd sysfixtime cron sysctl; do
+for service in odhcpd turboacc sysntpd sysfixtime sysctl autocore autoreboot; do
     [ ! -x "/etc/init.d/$service" ] || "/etc/init.d/$service" disable
 done
 # First-boot defaults may have enabled these flags again.
@@ -59,3 +60,4 @@ if uci -q get turboacc.config >/dev/null; then
     uci set turboacc.config.fullcone_nat=0
     uci commit turboacc
 fi
+touch /tmp/landscape-prepared

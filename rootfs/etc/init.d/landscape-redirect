@@ -4,6 +4,10 @@ STOP=01
 USE_PROCD=1
 
 start_service() {
+    [ -f /tmp/landscape-prepared ] || {
+        logger -t landscape-redirect 'Network preparation failed; refusing to register this exit.'
+        return 1
+    }
     local level
     level="$(uci -q get landscape.container.log_level)"
     procd_open_instance

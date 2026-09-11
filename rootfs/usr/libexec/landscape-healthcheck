@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 # Local readiness only; successful Landscape enrollment is checked in handler logs.
+[ -f /tmp/landscape-prepared ]
 /etc/init.d/landscape-redirect running
 ubus call network.interface.lan status | jsonfilter -e '@.up' | grep -qx true
 ip -4 route show default dev eth0 | grep -q '^default via '

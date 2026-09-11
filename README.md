@@ -82,7 +82,7 @@ lkit 环境可能使用 `/root/.lkit/landscape/data/unix_link`，请按真实目
 
 持久化 `/etc/config`、`/etc/openclash` 和 `/etc/dropbear`。`/etc/config/network` 由 Docker 地址每次启动自动重建，LuCI 的网络地址修改不会跨重建保留；其他 UCI 配置不被启动脚本整体覆盖。初始 DNS 使用 `LAND_DNS_ADDR=10.10.10.1`，初始化后由插件/LuCI 维护。
 
-不挂载整个 `/etc`、`/lib` 或根目录，防止旧数据遮住更新的系统、服务脚本和接应程序。OpenWrt 硬件 preinit 已替换为容器专用空阶段，避免探测/挂载宿主启动盘、升级引导器或重命名网卡；保留 `/sbin/init` 和 procd 作为真正启动/监督机制。关闭容器中的 NTP 校时、全局 sysctl 调优和上游定时任务，避免特权容器影响宿主机。
+不挂载整个 `/etc`、`/lib` 或根目录，防止旧数据遮住更新的系统、服务脚本和接应程序。OpenWrt 硬件 preinit 已替换为容器专用空阶段，避免探测/挂载宿主启动盘、升级引导器或重命名网卡；保留 `/sbin/init` 和 procd 作为真正启动/监督机制。关闭容器中的 NTP 校时、全局 sysctl/网卡调优、自动重启和上游跑分任务，避免特权容器影响宿主机；保留 cron 以支持代理插件的订阅刷新。
 
 **注意：** `/etc/shadow`、用户新装的软件包以及挂载目录以外的插件文件不在持久卷中。容器重建后 root 密码会恢复上游初始设置，必须重新修改；新增软件和额外文件应先备份。不要在容器中刷写完整固件或执行 sysupgrade。
 
