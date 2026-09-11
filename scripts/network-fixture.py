@@ -15,10 +15,19 @@ from scapy.all import Ether, IPv6, ICMPv6ND_RA, ICMPv6NDOptPrefixInfo, ICMPv6NDO
 
 BRIDGE = 'ld-owrt-test'
 TARGET = '2001:db8:ffff::1'
+# Do not use .test (locally blocked by OpenWrt's RFC6761 config) or RFC1918
+# answers (correctly rejected by DNS rebinding protection).
+DNS_NAME = 'smoke.example.net'
+DNS_A = '1.1.1.1'
+DNS_AAAA = '2606:4700:4700::1111'
 
 
 def command(*args, timeout=30):
-    return subprocess.check_output(args, text=True, stderr=subprocess.STDOUT, timeout=timeout).strip()
+    try:
+        return subprocess.check_output(args, text=True, stderr=subprocess.STDOUT, timeout=timeout).strip()
+    except subprocess.CalledProcessError as error:
+        print(error.output, file=sys.stderr, flush=True)
+        raise
 
 
 def inside(name, *args):
@@ -29,11 +38,11 @@ class Resolver(BaseResolver):
     def resolve(self, request, _handler):
         reply = request.reply()
         q = request.q
-        if str(q.qname) == 'smoke.test.':
+        if str(q.qname) == DNS_NAME + '.':
             if q.qtype == QTYPE.A:
-                reply.add_answer(RR(q.qname, QTYPE.A, ttl=30, rdata=A('172.30.80.1')))
+                reply.add_answer(RR(q.qname, QTYPE.A, ttl=30, rdata=A(DNS_A)))
             if q.qtype == QTYPE.AAAA:
-                reply.add_answer(RR(q.qname, QTYPE.AAAA, ttl=30, rdata=AAAA(TARGET)))
+                reply.add_answer(RR(q.qname, QTYPE.AAAA, ttl=30, rdata=AAAA(DNS_AAAA)))
         return reply
 
 
@@ -90,8 +99,8 @@ def verify(name, root):
 
 
 def check(name, root):
-    lookup = inside(name, 'nslookup', 'smoke.test', '127.0.0.1')
-    assert '172.30.80.1' in lookup and TARGET in lookup, lookup
+    lookup = inside(name, 'nslookup', DNS_NAME, '127.0.0.1')
+    assert DNS_A in lookup and DNS_AAAA in lookup, lookup
     print('PASS: local dnsmasq resolves A and AAAA through the configured upstream', flush=True)
     address = verify(name, root)
     command('ping', '-6', '-c', '1', '-W', '3', address)
