@@ -18,14 +18,14 @@ done
 [ -d /sys/devices/virtual/net/eth0 ] || fail 'eth0 must be a Docker veth interface.'
 
 ip4=$(ip -o -4 address show dev eth0 scope global | awk 'NR == 1 {print $4}')
-ip6=$(ip -o -6 address show dev eth0 scope global | awk '!/ dadfailed / {print $4}')
+ip6=$(ip -o -6 address show dev eth0 scope global | awk '!/ dadfailed | dynamic / {print $4}')
 gw4=$(ip -4 route show default dev eth0 | awk '$1 == "default" && $2 == "via" {print $3; exit}')
 gw6=$(ip -6 route show default dev eth0 | awk '$1 == "default" && $2 == "via" {print $3; exit}')
 [ -n "$ip4" ] && [ -n "$gw4" ] || fail 'Docker must supply an IPv4 address and gateway.'
 [ -n "$ip6" ] && [ -n "$gw6" ] || fail 'Docker must supply an IPv6 address and gateway; enable IPv6 on its bridge.'
 log_level=${LAND_REDIRECT_LOG_LEVEL:-INFO}
 case "$log_level" in OFF|ERROR|WARN|INFO|DEBUG|TRACE) ;; *) fail 'Invalid LAND_REDIRECT_LOG_LEVEL.' ;; esac
-dns=${LAND_DNS_ADDR:-10.10.10.1}
+dns=${LAND_DNS_ADDR:-223.5.5.5}
 case "$dns" in ''|*[!0-9a-fA-F:.]*) fail 'LAND_DNS_ADDR must be an IP address.' ;; esac
 
 # Network is Docker-owned. Recreate only this UCI file, never subscription/plugin settings.

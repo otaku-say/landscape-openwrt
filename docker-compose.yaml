@@ -17,8 +17,9 @@ services:
         soft: -1
         hard: -1
     environment:
-      # 首次启动的上游 DNS；后续 DNS 设置由 LuCI/代理插件维护。
-      LAND_DNS_ADDR: "10.10.10.1"
+      # 默认使用可直连的上游 DNS，不依赖 Landscape 的 LAN DNS 监听。
+      # 修改后只更新仍由本镜像管理的 DNS；不会覆盖 PassWall/自定义 DNS。
+      LAND_DNS_ADDR: "223.5.5.5"
       LAND_REDIRECT_LOG_LEVEL: "INFO"
     sysctls:
       net.ipv4.conf.lo.accept_local: "1"
@@ -33,6 +34,8 @@ services:
       - "10.10.10.1:8080:80"
       - "10.10.10.1:8443:443"
       - "10.10.10.1:2222:22"
+      # ttyd 使用独立端口；HTTPS LuCI 中点击“Open terminal”新窗口打开。
+      - "10.10.10.1:7681:7681"
     volumes:
       # lkit 用户改为 /root/.lkit/landscape/data/unix_link。
       - type: bind
@@ -43,7 +46,6 @@ services:
           create_host_path: false
       # 不持久化整个 /etc 或根目录，否则会遮住新镜像文件。
       - openwrt-config:/etc/config
-      - openclash-data:/etc/openclash
       - dropbear-keys:/etc/dropbear
     networks:
       edge:
@@ -57,6 +59,8 @@ services:
 
 networks:
   edge:
+    # 在 Landscape 将 ld-owrt0 设为 LAN，同时启用 LANv6 和 LAN 路由（LR）。
+    # LANv6 选上游 PD 的空闲 /64、纯 RA；不要填写固定运营商前缀。
     name: landscape-openwrt-edge
     driver: bridge
     enable_ipv6: true
@@ -72,5 +76,4 @@ networks:
 
 volumes:
   openwrt-config:
-  openclash-data:
   dropbear-keys:

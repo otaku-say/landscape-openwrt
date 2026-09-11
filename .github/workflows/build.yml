@@ -40,7 +40,8 @@ jobs:
       - name: Validate source
         run: |
           python3 -m unittest discover -s tests -v
-          shellcheck -S warning start.sh rootfs/usr/libexec/* scripts/*.sh
+          node scripts/test-ttyd.mjs
+          shellcheck -S warning start.sh rootfs/usr/libexec/* rootfs/etc/hotplug.d/iface/* scripts/*.sh
           shellcheck -S warning -s ash -e SC2034 rootfs/etc/init.d/*
           docker compose -f docker-compose.yaml config --quiet
       - uses: docker/setup-buildx-action@v3
@@ -79,9 +80,18 @@ jobs:
             BUILD_DATE=${{ steps.inputs.outputs.resolved_at }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - uses: actions/setup-node@v4
+        if: steps.inputs.outputs.build == 'true'
+        with:
+          node-version: '22'
+      - name: Install isolated network test dependencies
+        if: steps.inputs.outputs.build == 'true'
+        run: |
+          python3 -m venv build/test-venv
+          build/test-venv/bin/pip install -r tests/requirements.txt
       - name: Boot and test actual OpenWrt candidate
         if: steps.inputs.outputs.build == 'true'
-        timeout-minutes: 8
+        timeout-minutes: 12
         run: bash -x scripts/smoke-test.sh landscape-openwrt:test
       - name: Publish only the tested image
         if: steps.inputs.outputs.build == 'true'
@@ -99,7 +109,8 @@ jobs:
             echo '## Published tested image'
             echo "\`$IMAGE:latest\`"
             echo "OpenWrt: $version; redirect_pkg_handler: $HANDLER"
-            echo 'Tests cover container boot and local IPv4/IPv6 forwarding, not a real Landscape router or proxy subscription.'
+            echo 'Tests cover boot, local dual-stack forwarding, DNS migration, SLAAC renewal/netifd restart, ttyd PTY and persistence.'
+            echo 'A real Landscape Flow and an external proxy subscription still require deployment acceptance.'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Unchanged inputs
         if: steps.inputs.outputs.build != 'true'

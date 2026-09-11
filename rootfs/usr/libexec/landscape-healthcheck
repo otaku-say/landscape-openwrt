@@ -8,3 +8,6 @@ ip -4 route show default dev eth0 | grep -q '^default via '
 ip -6 route show default dev eth0 | grep -q '^default via '
 nft list chain inet fw4 srcnat_lan | grep -q masquerade
 pidof uhttpd >/dev/null
+pidof dnsmasq >/dev/null
+[ "$(sysctl -n net.ipv6.conf.eth0.accept_ra)" = 2 ]
+[ "$(sysctl -n net.ipv6.conf.eth0.autoconf)" = 1 ]

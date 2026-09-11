@@ -6,7 +6,9 @@ network=landscape-openwrt-smoke
 volume=landscape-openwrt-smoke-config
 socket_dir=$(mktemp -d)
 server_pid=
+fixture_pid=
 mkdir -p build
+python=build/test-venv/bin/python
 cleanup() {
     timeout 15 docker logs "$name" > build/smoke-docker.log 2>&1 || true
     timeout 15 docker exec "$name" logread > build/smoke-openwrt.log 2>&1 || true
@@ -15,6 +17,10 @@ cleanup() {
     docker exec "$name" ip -4 route > build/smoke-ipv4.log 2>&1 || true
     docker exec "$name" ip -6 route > build/smoke-ipv6.log 2>&1 || true
     docker exec "$name" nft list ruleset > build/smoke-nft.log 2>&1 || true
+    if [[ -n "$fixture_pid" ]]; then
+        sudo "$python" scripts/network-fixture.py stop "$socket_dir" || true
+        wait "$fixture_pid" 2>/dev/null || true
+    fi
     docker rm -f "${name}-client" "$name" >/dev/null 2>&1 || true
     docker network rm "$network" >/dev/null 2>&1 || true
     docker volume rm "$volume" >/dev/null 2>&1 || true
@@ -24,17 +30,25 @@ cleanup() {
 trap cleanup EXIT
 
 docker network create --driver bridge --ipv6 \
+    --opt com.docker.network.bridge.name=ld-owrt-test \
     --subnet 172.30.80.0/24 --gateway 172.30.80.1 \
     --subnet fd70:6c61:6e64:80::/64 --gateway fd70:6c61:6e64:80::1 "$network"
 python3 scripts/test-server.py "$socket_dir" > build/smoke-server.log 2>&1 &
 server_pid=$!
 for _ in {1..20}; do [[ ! -S "$socket_dir/register.sock" ]] || break; sleep 1; done
 [[ -S "$socket_dir/register.sock" ]]
+# Keep diagnostics runner-owned; only the packet sockets need root.
+# shellcheck disable=SC2024
+sudo "$python" scripts/network-fixture.py serve "$socket_dir" > build/smoke-network.log 2>&1 &
+fixture_pid=$!
+for _ in {1..20}; do [[ ! -f "$socket_dir/network-ready" ]] || break; sleep 1; done
+[[ -f "$socket_dir/network-ready" ]]
 
 start_container() {
     docker run -d --name "$name" --privileged --network "$network" \
         --ip 172.30.80.2 --ip6 fd70:6c61:6e64:80::2 \
         --label ld_flow_edge=true --ulimit memlock=-1:-1 \
+        -e LAND_DNS_ADDR=172.30.80.1 \
         --sysctl net.ipv4.conf.lo.accept_local=1 \
         --sysctl net.ipv6.conf.all.disable_ipv6=0 \
         --sysctl net.ipv6.conf.default.disable_ipv6=0 \
@@ -77,11 +91,43 @@ timeout 45 docker run --rm --name "${name}-client" --privileged --no-healthcheck
       wget -T 10 -qO- "http://[fd70:6c61:6e64:80::1]:18081/" | grep -Fx "fd70:6c61:6e64:80::2"
     '
 
+node scripts/test-ttyd.mjs 172.30.80.2
+sudo "$python" scripts/network-fixture.py check "$name" "$socket_dir"
+docker cp scripts/smoke-dns.sh "$name:/tmp/smoke-dns.sh"
+docker exec "$name" sh /tmp/smoke-dns.sh
+docker exec "$name" sh -ec '
+  for binary in xray sing-box ttyd bash unzip fw4 nft; do command -v "$binary"; done
+  test -f /usr/lib/opkg/info/luci-app-passwall.control
+  for app in openclash homeproxy momo; do
+    test ! -e "/etc/init.d/$app"
+    test ! -e "/usr/share/luci/menu.d/luci-app-$app.json"
+  done
+  test ! -e /usr/libexec/mihomo
+'
+
 # A user setting must survive recreation without freezing the image's init scripts.
-docker exec "$name" sh -ec 'uci set landscape.test=persistence; uci set landscape.test.value=retained; uci commit landscape'
+docker exec "$name" sh -ec '
+  uci set landscape.test=persistence
+  uci set landscape.test.value=retained
+  uci set passwall.landscape_smoke=nodes
+  uci set passwall.landscape_smoke.remarks=retained
+  uci set firewall.openclash=include
+  uci set firewall.openclash.type=script
+  uci set firewall.openclash.path=/var/etc/openclash.include
+  uci set firewall.openclash.enabled=1
+  uci commit
+'
 docker rm -f "$name"
 start_container
 wait_healthy
 [[ $(docker exec "$name" uci get landscape.test.value) == retained ]]
-docker exec "$name" sh -ec 'uci delete landscape.test; uci commit landscape'
-echo 'PASS: procd, LuCI IPv4/IPv6, handler enrollment, NAT44/NAT66, config recreation.'
+sudo "$python" scripts/network-fixture.py verify "$name" "$socket_dir"
+docker exec "$name" sh -ec '
+  test "$(uci get passwall.landscape_smoke.remarks)" = retained
+  test "$(uci get firewall.openclash.enabled)" = 0
+  uci delete landscape.test
+  uci delete passwall.landscape_smoke
+  uci delete firewall.openclash
+  uci commit
+'
+echo 'PASS: procd, dual-stack LuCI, enrollment, NAT44/66, DNS migration, SLAAC renewal, ttyd and recreation.'

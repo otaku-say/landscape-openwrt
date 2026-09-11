@@ -1,0 +1,4 @@
+#!/bin/sh
+case "${ACTION:-}:${INTERFACE:-}" in
+    ifup:lan|ifupdate:lan) /usr/libexec/landscape-ipv6 ;;
+esac

@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+[ -d /proc/sys/net/ipv6/conf/eth0 ] || exit 0
+# netifd resets these on device setup. Reapply after each lan ifup/ifupdate.
+# Only learn the PD-derived address/prefix, retaining Docker's static gateway.
+sysctl -qw net.ipv6.conf.eth0.disable_ipv6=0 \
+    net.ipv6.conf.eth0.accept_ra=2 \
+    net.ipv6.conf.eth0.autoconf=1 \
+    net.ipv6.conf.eth0.accept_ra_pinfo=1 \
+    net.ipv6.conf.eth0.accept_ra_defrtr=0
