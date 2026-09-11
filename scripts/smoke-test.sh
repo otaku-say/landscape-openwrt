@@ -93,8 +93,8 @@ timeout 45 docker run --rm --name "${name}-client" --privileged --no-healthcheck
 
 node scripts/test-ttyd.mjs 172.30.80.2
 sudo "$python" scripts/network-fixture.py check "$name" "$socket_dir"
-docker cp scripts/smoke-dns.sh "$name:/tmp/smoke-dns.sh"
-docker exec "$name" sh /tmp/smoke-dns.sh
+# OpenWrt mounts /tmp itself; docker cp may address the underlying mount instead.
+docker exec -i "$name" sh -s < scripts/smoke-dns.sh
 docker exec "$name" sh -ec '
   for binary in xray sing-box ttyd bash unzip fw4 nft; do command -v "$binary"; done
   test -f /usr/lib/opkg/info/luci-app-passwall.control
