@@ -119,6 +119,8 @@ def main():
             'DROPBEAR_VOLUME_NAME': f'ci-dropbear-{index}',
             'LANDSCAPE_SOCKET_DIR': '/tmp/landscape-ci/unix_link',
             'TZ': 'Etc/UTC',
+            'LAND_DNS_ADDR': ('8.8.8.8,1.1.1.1', '8.8.8.8,2606:4700:4700::1111',
+                              '2606:4700:4700::1111,2001:4860:4860::8888')[index - 1],
             'LUCI_HTTP_PORT': '18080',
             'LUCI_HTTPS_PORT': '18443',
             'SSH_PORT': '12222',

@@ -72,7 +72,7 @@ root 的 LuCI 和 SSH 使用同一个运行时密码。密码不是 build arg，
 | IPv4 子网 / 网关 / 容器 | `172.30.66.0/24` / `172.30.66.1` / `172.30.66.2` |
 | ULA 子网 / 网关 / 容器 | `fd70:6c61:6e64:66::/64` / `fd70:6c61:6e64:66::1` / `fd70:6c61:6e64:66::2` |
 | Landscape socket | `/root/.lkit/landscape/data/unix_link` |
-| 首次上游 DNS | `223.5.5.5` |
+| 接口自定义 DNS（`LAND_DNS_ADDR`） | `8.8.8.8`，支持英文逗号分隔多个 IPv4/IPv6 地址 |
 
 非 lkit 部署通常使用 `/root/.landscape-router/unix_link`。socket 目录必须已存在。网桥名称最多 15 字符；网段应避开 LAN、VPN 和其他 Docker 网络。IPv4 只使用未占用的 RFC1918 私网段，同时调整子网、网关、容器地址；公网 IPv6 由 RA 动态获取，不在 Compose 填运营商前缀。
 
@@ -126,7 +126,21 @@ docker exec landscape-openwrt /usr/libexec/landscape-proxy-check
 
 ## 配置与组件
 
-首次初始化 dnsmasq 上游为 `LAND_DNS_ADDR`，系统解析指向 `127.0.0.1`。随后 DNS 由 LuCI/PassWall 管理。PassWall 订阅、节点和 ACL 保存在配置卷；`network`、`uhttpd`、`dropbear` 由运行时参数重新生成，root 密码与时区每次启动重新应用。SSH 主机密钥单独持久化。
+`LAND_DNS_ADDR` 只设置「网络 → 接口 → 自定义 DNS 服务器」（`network.lan.dns`），每次启动重新应用。支持单个地址，或使用英文逗号分隔多个 IPv4/IPv6 地址；逗号两侧可有空格，不支持空项、域名、URL、端口、CIDR 或换行。示例：
+
+```dotenv
+LAND_DNS_ADDR=8.8.8.8,1.1.1.1
+# 也可混合 IPv4/IPv6；IPv6 不带方括号：
+# LAND_DNS_ADDR=8.8.8.8,2606:4700:4700::1111
+```
+
+每个地址分别写入一个 UCI DNS 列表项，不把整串逗号文本当作一个服务器。多个地址不代表严格按填写顺序进行主备切换，实际查询策略由解析服务决定。修改 `.env` 后执行 `docker compose up -d` 重新创建容器应用参数。
+
+**不再把 `LAND_DNS_ADDR` 写入「DHCP/DNS → DNS 转发」（`dhcp.@dnsmasq[0].server`）。** 新部署不添加默认转发条目，dnsmasq 使用 netifd 根据接口配置生成的 `/tmp/resolv.conf.d/resolv.conf.auto`；系统解析仍指向 `127.0.0.1`。之后转发规则和 DNS 策略由 LuCI/PassWall 管理，重复启动不会清空或覆盖。
+
+已有配置卷不会自动删除旧默认项或改写已有 PassWall DNS 设置。旧版升级后，若要让普通 dnsmasq 改用接口 DNS，在 LuCI 的 DNS 转发列表中仅移除不再需要的旧默认地址（如 `8.8.8.8`），保留按域名转发和 PassWall 条目；在未由 PassWall 接管的配置下，取消「忽略解析文件」，确认解析文件是 `/tmp/resolv.conf.d/resolv.conf.auto`，然后保存并应用。不要指向 `/etc/resolv.conf`，它包含本机回环 DNS，可能形成循环；也不要为更新清空配置卷或手工重置初始化标记。
+
+PassWall 订阅、节点和 ACL 保存在配置卷；`network`、`uhttpd`、`dropbear` 由运行时参数重新生成，root 密码与时区每次启动重新应用。SSH 主机密钥单独持久化。
 
 不要挂载整个 `/etc`、`/lib` 或根目录。卷以外的自装软件包、手工更新核心不会随重建保留。
 

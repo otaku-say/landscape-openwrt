@@ -1,0 +1,22 @@
+#!/bin/sh
+# Parse interface DNS addresses before any runtime configuration is changed.
+set -eu
+fail() { printf 'landscape-network-dns: %s\n' "$*" >&2; exit 1; }
+command -v validate_data >/dev/null 2>&1 || fail 'OpenWrt validate_data is required.'
+remaining=${LAND_DNS_ADDR-8.8.8.8}
+servers=
+while :; do
+    address=${remaining%%,*}
+    address=${address#"${address%%[![:blank:]]*}"}
+    address=${address%"${address##*[![:blank:]]}"}
+    case "$address" in
+        ''|*[!0-9a-fA-F:.]*) fail 'LAND_DNS_ADDR must contain IP addresses separated by English commas, without empty entries.' ;;
+    esac
+    validate_data ipaddr "$address" >/dev/null 2>&1 || fail 'LAND_DNS_ADDR contains an invalid IPv4 or IPv6 address.'
+    servers="${servers}${servers:+ }$address"
+    case "$remaining" in
+        *,*) remaining=${remaining#*,} ;;
+        *) break ;;
+    esac
+done
+printf '%s\n' "$servers"

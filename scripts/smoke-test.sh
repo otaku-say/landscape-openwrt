@@ -11,7 +11,8 @@ fixture_pid=
 mkdir -p build
 python=build/test-venv/bin/python
 # Generated per CI run; never trace or print this environment.
-export LAND_ROOT_PASSWORD TZ LUCI_HTTP_PORT LUCI_HTTPS_PORT SSH_PORT
+export LAND_ROOT_PASSWORD TZ LUCI_HTTP_PORT LUCI_HTTPS_PORT SSH_PORT LAND_DNS_ADDR
+LAND_DNS_ADDR=172.30.80.1,fd70:6c61:6e64:80::1
 LUCI_HTTP_PORT=80
 LUCI_HTTPS_PORT=443
 SSH_PORT=22
@@ -22,6 +23,8 @@ cleanup() {
     timeout 15 docker exec "$name" logread > build/smoke-openwrt.log 2>&1 || true
     timeout 15 docker exec "$name" uci export firewall > build/smoke-uci-firewall.log 2>&1 || true
     timeout 15 docker exec "$name" uci export dhcp > build/smoke-uci-dhcp.log 2>&1 || true
+    timeout 15 docker exec "$name" uci export network > build/smoke-uci-network.log 2>&1 || true
+    timeout 15 docker exec "$name" cat /tmp/resolv.conf.d/resolv.conf.auto > build/smoke-resolv.log 2>&1 || true
     timeout 15 docker exec "$name" uci export dropbear > build/smoke-uci-dropbear.log 2>&1 || true
     timeout 15 docker exec "$name" netstat -lntp > build/smoke-listeners.log 2>&1 || true
     timeout 15 docker exec "$name" cat /tmp/landscape-proxy-check.log > build/smoke-proxy-check.log 2>&1 || true
@@ -61,7 +64,7 @@ start_container() {
     docker run -d --name "$name" --privileged --network "$network" \
         --ip 172.30.80.2 --ip6 fd70:6c61:6e64:80::2 \
         --label ld_flow_edge=true --ulimit memlock=-1:-1 \
-        -e LAND_DNS_ADDR=172.30.80.1 -e LAND_ROOT_PASSWORD -e TZ \
+        -e LAND_DNS_ADDR -e LAND_ROOT_PASSWORD -e TZ \
         -e LUCI_HTTP_PORT -e LUCI_HTTPS_PORT -e SSH_PORT \
         --sysctl net.ipv4.conf.lo.accept_local=1 \
         --sysctl net.ipv6.conf.all.disable_ipv6=0 \
@@ -80,6 +83,7 @@ wait_healthy() {
 }
 start_container
 wait_healthy
+docker exec -i "$name" sh -s -- --fresh < scripts/smoke-dns.sh
 [[ -z $(docker port "$name") ]]
 "$python" scripts/test-management.py '172.30.80.2,fd70:6c61:6e64:80::2' "$LUCI_HTTP_PORT" "$LUCI_HTTPS_PORT" "$SSH_PORT"
 key_before=$(docker exec "$name" sha256sum /etc/dropbear/dropbear_ed25519_host_key)
@@ -110,7 +114,7 @@ timeout 45 docker run --rm --name "${name}-client" --privileged --no-healthcheck
 sudo "$python" scripts/network-fixture.py check "$name" "$socket_dir"
 sudo "$python" scripts/test-flow-exit.py "$name"
 # OpenWrt mounts /tmp itself; docker cp may address the underlying mount instead.
-docker exec -i "$name" sh -s < scripts/smoke-dns.sh
+docker exec -i "$name" sh -s -- --preserve < scripts/smoke-dns.sh
 docker exec "$name" sh -ec '
   for binary in xray sing-box hysteria geoview chinadns-ng bash unzip fw4 nft; do command -v "$binary"; done
   apk info -e luci-app-passwall luci-i18n-passwall-zh-cn >/dev/null
@@ -131,6 +135,7 @@ docker exec "$name" sh -ec '
   uci set landscape.test.value=retained
   uci set passwall.landscape_smoke=nodes
   uci set passwall.landscape_smoke.remarks=retained
+  uci add_list "dhcp.@dnsmasq[0].server=/retained.example.net/172.30.80.1"
   uci commit
 '
 docker rm -f "$name"
@@ -141,8 +146,13 @@ TZ=Europe/Berlin
 LUCI_HTTP_PORT=18000
 LUCI_HTTPS_PORT=18443
 SSH_PORT=12222
+# Switching to IPv6-only proves recreation replaces, rather than appends, interface DNS.
+LAND_DNS_ADDR=fd70:6c61:6e64:80::1
 start_container
 wait_healthy
+[[ $(docker exec "$name" uci get 'dhcp.@dnsmasq[0].server') == /retained.example.net/172.30.80.1 ]]
+docker exec -i "$name" sh -s -- --interface < scripts/smoke-dns.sh
+echo 'PASS: IPv6-only interface DNS replaces the old list while custom forwarding survives recreation'
 [[ $(docker exec "$name" uci get landscape.test.value) == retained ]]
 [[ $(docker exec "$name" sha256sum /etc/dropbear/dropbear_ed25519_host_key) == "$key_before" ]]
 "$python" scripts/test-management.py '172.30.80.2,fd70:6c61:6e64:80::2' "$LUCI_HTTP_PORT" "$LUCI_HTTPS_PORT" "$SSH_PORT"

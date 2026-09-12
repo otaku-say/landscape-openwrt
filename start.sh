@@ -29,8 +29,7 @@ tz=${TZ:-Asia/Shanghai}
 case "$tz" in ''|/*|*..*|*[!A-Za-z0-9_+/-]*) fail 'TZ must be a valid IANA timezone.' ;; esac
 [ -f "/usr/share/zoneinfo/$tz" ] || fail 'Unknown TZ; use an installed IANA timezone such as Asia/Shanghai.'
 export TZ="$tz"
-dns=${LAND_DNS_ADDR:-223.5.5.5}
-case "$dns" in ''|*[!0-9a-fA-F:.]*) fail 'LAND_DNS_ADDR must be an IP address.' ;; esac
+dns_servers=$(/usr/libexec/landscape-network-dns)
 
 /usr/libexec/landscape-management --check
 /usr/libexec/landscape-password
@@ -65,14 +64,13 @@ uci set network.lan.gateway="$gw4"
 uci set network.lan.ip6gw="$gw6"
 uci set network.lan.delegate=0
 uci set network.lan.force_link=1
-uci add_list network.lan.dns="$dns"
+for dns in $dns_servers; do uci add_list network.lan.dns="$dns"; done
 for address in $ip6; do uci add_list network.lan.ip6addr="$address"; done
 uci commit network
 [ -f /etc/config/landscape ] || touch /etc/config/landscape
 uci set landscape.container=container
 uci set "landscape.container.timezone=$tz"
 uci set landscape.container.log_level="$log_level"
-uci set landscape.container.dns="$dns"
 uci commit landscape
 /usr/libexec/landscape-management
 

@@ -91,8 +91,9 @@ def serve(root):
     setup_client()
     for addr in ['fe80::1/64', '2001:db8:80:1::1/64', '2001:db8:80:2::1/64', TARGET + '/128']:
         command('ip', '-6', 'addr', 'add', addr, 'dev', BRIDGE, 'nodad')
-    for tcp in (False, True):
-        DNSServer(Resolver(), address='172.30.80.1', port=53, tcp=tcp).start_thread()
+    for address in ('172.30.80.1', 'fd70:6c61:6e64:80::1'):
+        for tcp in (False, True):
+            DNSServer(Resolver(), address=address, port=53, tcp=tcp).start_thread()
     mac = get_if_hwaddr(BRIDGE)
     stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stop.set())

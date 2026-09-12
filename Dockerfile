@@ -37,7 +37,7 @@ COPY start.sh /usr/bin/landscape-start
 COPY rootfs/ /
 RUN set -eu; \
     test -x /sbin/init; test -x /sbin/procd; \
-    for binary in fw4 nft ip jsonfilter chpasswd xray sing-box hysteria geoview chinadns-ng; do command -v "$binary"; done; \
+    for binary in fw4 nft ip jsonfilter chpasswd validate_data xray sing-box hysteria geoview chinadns-ng; do command -v "$binary"; done; \
     mkdir -p /var/lock; \
     chmod 0755 /etc/preinit /usr/bin/redirect_pkg_handler /usr/bin/landscape-start \
       /usr/libexec/landscape-* /etc/init.d/landscape-* /etc/hotplug.d/iface/99-landscape-ipv6; \
@@ -50,7 +50,7 @@ RUN set -eu; \
     done
 ENV PATH=/usr/sbin:/usr/bin:/sbin:/bin \
     TZ=Asia/Shanghai \
-    LAND_DNS_ADDR=223.5.5.5 \
+    LAND_DNS_ADDR=8.8.8.8 \
     LAND_REDIRECT_LOG_LEVEL=INFO \
     LUCI_HTTP_PORT=80 \
     LUCI_HTTPS_PORT=443 \
