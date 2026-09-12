@@ -249,6 +249,9 @@ def main():
             raise
     Path("build").mkdir(exist_ok=True)
     Path("build/upstream.json").write_text(json.dumps(state, indent=2) + "\n")
+    # Source-only changes must not invalidate the verified package-install layer.
+    install = {key: value for key, value in state.items() if key.startswith(("passwall_", "dependency_"))}
+    Path("build/install-inputs.json").write_text(json.dumps(install, indent=2, sort_keys=True) + "\n")
     outputs = {**state, "build": str(build).lower()}
     if os.environ.get("GITHUB_OUTPUT"):
         with open(os.environ["GITHUB_OUTPUT"], "a") as output:

@@ -3,7 +3,7 @@ FROM scratch AS prepared
 ADD build/rootfs.tar.gz /
 ENV PATH=/usr/sbin:/usr/bin:/sbin:/bin
 COPY build/passwall.apk build/passwall-zh.apk /tmp/packages/
-COPY build/upstream.json /usr/share/landscape-openwrt/upstream.json
+COPY build/install-inputs.json /usr/share/landscape-openwrt/install-inputs.json
 COPY scripts/install-packages.sh scripts/passwall-packages.txt /tmp/
 COPY build/packages.adb /tmp/passwall-feed.adb
 COPY build/passwall-build.pem /etc/apk/keys/openwrt-passwall-build.pem
@@ -32,6 +32,7 @@ LABEL org.opencontainers.image.title="Landscape ImmortalWrt PassWall" \
       dev.landscape.handler.version="${HANDLER_VERSION}" \
       dev.landscape.handler.sha256="${HANDLER_SHA256}"
 COPY build/redirect_pkg_handler /usr/bin/redirect_pkg_handler
+COPY build/upstream.json /usr/share/landscape-openwrt/upstream.json
 COPY start.sh /usr/bin/landscape-start
 COPY rootfs/ /
 RUN set -eu; \

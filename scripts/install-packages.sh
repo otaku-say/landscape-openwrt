@@ -3,7 +3,7 @@ set -eu
 mkdir -p /var/lock /var/run /var/state /tmp/.uci /tmp/apk-cache
 # Keep verified indexes across the signed online and local-only transactions.
 apk() { command apk --cache-dir /tmp/apk-cache "$@"; }
-metadata=/usr/share/landscape-openwrt/upstream.json
+metadata=/usr/share/landscape-openwrt/install-inputs.json
 # System APK feeds use USTC; retain official package signature verification.
 sed -i 's|https://downloads.immortalwrt.org|https://mirrors.ustc.edu.cn/immortalwrt|g' \
     /etc/apk/repositories.d/distfeeds.list

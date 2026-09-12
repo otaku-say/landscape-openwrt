@@ -53,13 +53,13 @@ LAND_REDIRECT_LOG_LEVEL=INFO
 | LuCI HTTP | `http://10.10.10.1:8000` |
 | LuCI HTTPS | `https://10.10.10.1:8443`，首次生成自签证书 |
 | SSH | `ssh -p 2222 root@10.10.10.1` |
-| 容器 IPv4 | `172.66.66.2/24` |
+| 容器 IPv4 | `172.30.66.2/24` |
 | 容器 ULA IPv6 | `fd70:6c61:6e64:66::2/64` |
 | Landscape socket | `/root/.lkit/landscape/data/unix_link` |
 
 非 lkit 部署通常将 `.env` 的 `LANDSCAPE_SOCKET_DIR` 改为 `/root/.landscape-router/unix_link`。Docker 网络名为 `landscape-openwrt`，网桥名为 `landscape-owrt`，后者必须不超过 Linux 的 15 字符限制。若从旧 `ld-owrt0` 改用新桥，需要在 Landscape 为新桥重新启用 LAN/LANv6/LR；保留旧桥时在 `.env` 填回其名称。管理端口有冲突时调整宿主机端口。
 
-模板保留你指定的 `172.66.66.0/24`，但它不是私网，会覆盖该公网网段的目的路由。新部署建议选择未占用的私网段（例如 `172.30.66.0/24`），同时修改 IPv4 子网、网关和容器地址。
+默认 IPv4 已修正为私网 `172.30.66.0/24`，网关 `172.30.66.1`、容器 `172.30.66.2`。可选未占用的 `10.66.66.0/24` 等 RFC1918 私网段，同时修改子网、网关和容器地址；避开已有 LAN/VPN/Docker 网络，不使用 `172.66.66.0/24` 等公网段。
 
 ```bash
 docker compose pull
