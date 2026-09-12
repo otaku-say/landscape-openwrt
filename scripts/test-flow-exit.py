@@ -68,7 +68,7 @@ def lan_return_path():
         # One classifier priority cannot mix IPv4 and IPv6 protocols.
         run('tc', 'filter', 'replace', 'dev', BRIDGE, 'ingress', 'protocol', protocol, 'pref', str(priority),
             'flower', 'skip_hw', 'dst_ip', address, 'action', 'pedit', 'ex',
-            'munge', 'eth', 'dst', 'set', client_mac, 'munge', 'eth', 'src', 'set', router_mac,
+            'munge', 'eth', 'dst', 'set', client_mac, 'munge', 'eth', 'src', 'set', router_mac, 'pipe',
             'action', 'mirred', 'egress', 'redirect', 'dev', LAN_LINK)
 
 
@@ -82,7 +82,7 @@ def tagged_redirect(name):
         # VLAN 0xc07 is Landscape flow 7. The shipped route handler must pop it.
         run('tc', 'filter', 'replace', 'dev', LAN_LINK, 'ingress', 'protocol', protocol, 'pref', str(priority),
             'flower', 'skip_hw', 'dst_ip', address, 'action', 'pedit', 'ex',
-            'munge', 'eth', 'dst', 'set', mac, 'munge', 'eth', 'src', 'set', source_mac,
+            'munge', 'eth', 'dst', 'set', mac, 'munge', 'eth', 'src', 'set', source_mac, 'pipe',
             'action', 'vlan', 'push', 'protocol', '802.1Q', 'id', '3079',
             'action', 'mirred', 'egress', 'redirect', 'dev', peer)
 
