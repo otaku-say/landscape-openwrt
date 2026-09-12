@@ -1,6 +1,8 @@
 #!/bin/sh
 set -eu
-mkdir -p /var/lock /var/run /var/state /tmp/.uci
+mkdir -p /var/lock /var/run /var/state /tmp/.uci /tmp/apk-cache
+# Keep verified indexes across the signed online and local-only transactions.
+apk() { command apk --cache-dir /tmp/apk-cache "$@"; }
 metadata=/usr/share/landscape-openwrt/upstream.json
 # System APK feeds use USTC; retain official package signature verification.
 sed -i 's|https://downloads.immortalwrt.org|https://mirrors.ustc.edu.cn/immortalwrt|g' \
@@ -39,7 +41,7 @@ while IFS= read -r package; do
 done < /tmp/passwall-packages.txt
 # Signature verification stays enabled for every downloaded dependency.
 # shellcheck disable=SC2086
-apk --no-cache add $deps "$@" haproxy kmod-nft-tproxy kmod-nft-socket \
+apk --update-cache add $deps "$@" haproxy kmod-nft-tproxy kmod-nft-socket \
     bash unzip openssl-util shadow-chpasswd zoneinfo-all
 # These two upstream release APKs are authenticated by their GitHub SHA256 above.
 # Limit the trust exception to an offline transaction: no unsigned remote feeds.
@@ -67,4 +69,4 @@ sed -i 's|https://mirrors.vsean.net/openwrt|https://mirrors.ustc.edu.cn/immortal
     /etc/uci-defaults/99-default-settings-chinese
 cp /tmp/passwall-packages.txt /usr/share/landscape-openwrt/passwall-packages.txt
 rm -rf /tmp/packages /tmp/install-packages.sh /tmp/passwall-metadata.json \
-    /tmp/passwall-packages.txt /tmp/passwall-feed.adb /tmp/passwall-feed.json /var/cache/apk
+    /tmp/passwall-packages.txt /tmp/passwall-feed.adb /tmp/passwall-feed.json /tmp/apk-cache /var/cache/apk
