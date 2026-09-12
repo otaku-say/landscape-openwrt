@@ -28,12 +28,24 @@ case "$log_level" in OFF|ERROR|WARN|INFO|DEBUG|TRACE) ;; *) fail 'Invalid LAND_R
 dns=${LAND_DNS_ADDR:-223.5.5.5}
 case "$dns" in ''|*[!0-9a-fA-F:.]*) fail 'LAND_DNS_ADDR must be an IP address.' ;; esac
 
+/usr/libexec/landscape-password
+unset LAND_ROOT_PASSWORD
+
 # Network is Docker-owned. Recreate only this UCI file, never subscription/plugin settings.
 # It is prepared before /sbin/init so OpenWrt cannot generate a conflicting br-lan.
-mkdir -p /etc/config /etc/landscape-original
-if [ -f /etc/config/network ] && [ ! -f /etc/landscape-original/network ]; then
-    cp /etc/config/network /etc/landscape-original/network
+mkdir -p /etc/config
+if [ ! -s /etc/config/system ]; then
+    touch /etc/config/system
+    uci set system.system=system
+    uci set system.system.hostname=ImmortalWrt
+    uci set system.system.timezone=CST-8
+    uci set system.system.zonename=Asia/Shanghai
+    uci set system.ntp=timeserver
+    uci set system.ntp.enabled=0
+    uci commit system
 fi
+# Docker's resolver file is a bind mount, so update its contents, not its inode.
+printf 'nameserver 127.0.0.1\n' > /etc/resolv.conf
 : > /etc/config/network
 uci set network.loopback=interface
 uci set network.loopback.device=lo
@@ -53,6 +65,7 @@ for address in $ip6; do uci add_list network.lan.ip6addr="$address"; done
 uci commit network
 [ -f /etc/config/landscape ] || touch /etc/config/landscape
 uci set landscape.container=container
+uci set landscape.container.generation=2
 uci set landscape.container.log_level="$log_level"
 uci set landscape.container.dns="$dns"
 uci commit landscape

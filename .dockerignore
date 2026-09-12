@@ -6,3 +6,8 @@ __pycache__
 build/*
 !build/redirect_pkg_handler
 !build/upstream.json
+!build/rootfs.tar.gz
+!build/passwall.apk
+!build/passwall-zh.apk
+!build/packages.adb
+!build/passwall-build.pem

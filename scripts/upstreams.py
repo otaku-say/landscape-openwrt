@@ -13,7 +13,8 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-BASE = "piaoyizy/openwrt-x86"
+IMMORTAL_TAGS_API = "https://api.github.com/repos/immortalwrt/immortalwrt/tags?per_page=100"
+PASSWALL_API = "https://api.github.com/repos/Openwrt-Passwall/openwrt-passwall/releases/latest"
 RELEASE_API = "https://api.github.com/repos/ThisSeanZhang/landscape/releases/latest"
 ASSET_NAME = "redirect_pkg_handler-x86_64-static"
 ACCEPT = ", ".join([
@@ -93,13 +94,79 @@ class Registry:
         return digest, config
 
 
+def latest_stable_tag(tags):
+    stable = [t for t in tags if re.fullmatch(r"v\d+\.\d+\.\d+", t["name"])]
+    if not stable:
+        raise ValueError("No stable ImmortalWrt tag")
+    return max(stable, key=lambda t: tuple(map(int, t["name"][1:].split("."))))
+
+
+def stable_release(release):
+    if release.get("draft") or release.get("prerelease"):
+        raise ValueError("Only stable published releases are supported")
+    return release
+
+
+def select_asset(release, pattern, repo):
+    assets = [a for a in release["assets"] if re.fullmatch(pattern, a["name"])]
+    if len(assets) != 1:
+        raise ValueError(f"Expected one official asset matching {pattern}")
+    asset = assets[0]
+    if not re.fullmatch(r"sha256:[a-f0-9]{64}", asset.get("digest", "")):
+        raise ValueError("Official GitHub asset SHA256 is required")
+    expected = f"https://github.com/{repo}/releases/download/{release['tag_name']}/{asset['name']}"
+    if urllib.parse.unquote(asset["browser_download_url"]) != expected:
+        raise ValueError("Unexpected official asset URL")
+    return asset
+
+
+def rootfs_checksum(checksums, filename):
+    matches = []
+    for line in checksums.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[1].lstrip("*") == filename:
+            matches.append(parts[0])
+    if len(matches) != 1 or not re.fullmatch(r"[a-f0-9]{64}", matches[0]):
+        raise ValueError("Expected one official rootfs SHA256")
+    return matches[0]
+
+
+def inputs_digest(state):
+    fields = ("immortalwrt_version", "immortalwrt_commit", "rootfs_sha256",
+              "passwall_release", "passwall_version", "passwall_sha256", "passwall_i18n_sha256",
+              "dependency_feed_sha256", "dependency_key_sha256",
+              "handler_version", "handler_sha256", "source_revision")
+    return digest_of(json.dumps({key: state[key] for key in fields}, sort_keys=True).encode())
+
+
 def resolve():
     headers = {"Accept": "application/vnd.github+json"}
     if os.environ.get("GH_TOKEN"):
         headers["Authorization"] = "Bearer " + os.environ["GH_TOKEN"]
-    release = json_request(RELEASE_API, headers)
-    if release.get("draft") or release.get("prerelease"):
-        raise ValueError("Only stable published releases are supported")
+    tags = []
+    for page in range(1, 11):
+        batch = json_request(IMMORTAL_TAGS_API + f"&page={page}", headers)
+        tags.extend(batch)
+        if len(batch) < 100:
+            break
+    base = latest_stable_tag(tags)
+    version = base["name"][1:]
+    if tuple(map(int, version.split("."))) < (25, 12, 0):
+        raise ValueError("PassWall APK requires ImmortalWrt 25.12 or newer")
+    base_url = f"https://downloads.immortalwrt.org/releases/{version}/targets/x86/64/"
+    filename = f"immortalwrt-{version}-x86-64-rootfs.tar.gz"
+    sums, _ = request(base_url + "sha256sums")
+    rootfs_sha = rootfs_checksum(sums.decode(), filename)
+    pw = stable_release(json_request(PASSWALL_API, headers))
+    app = select_asset(pw, r"25\.12\+_luci-app-passwall-[0-9][0-9A-Za-z.+~-]*\.apk",
+                       "Openwrt-Passwall/openwrt-passwall")
+    i18n = select_asset(pw, r"25\.12\+_luci-i18n-passwall-zh-cn-[0-9][0-9A-Za-z.+~-]*\.apk",
+                        "Openwrt-Passwall/openwrt-passwall")
+    pw_version = app["name"].removeprefix("25.12+_luci-app-passwall-").removesuffix(".apk")
+    translation_version = i18n["name"].removeprefix("25.12+_luci-i18n-passwall-zh-cn-").removesuffix(".apk")
+    if re.sub(r"-r\d+$", "", pw_version) != re.sub(r"-r\d+$", "", translation_version):
+        raise ValueError("PassWall app and Chinese translation versions disagree")
+    release = stable_release(json_request(RELEASE_API, headers))
     tag = release["tag_name"]
     if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag):
         raise ValueError("Unexpected stable version format")
@@ -114,7 +181,13 @@ def resolve():
     expected = f"https://github.com/ThisSeanZhang/landscape/releases/download/{tag}/{ASSET_NAME}"
     if url != expected:
         raise ValueError("Unexpected official asset URL")
-    base_digest, config = Registry("registry-1.docker.io", BASE).amd64("latest")
+    dependency_feed_url = ("https://master.dl.sourceforge.net/project/openwrt-passwall-build/"
+                           f"releases/packages-{'.'.join(version.split('.')[:2])}/x86_64/passwall_packages/packages.adb")
+    dependency_key_url = "https://master.dl.sourceforge.net/project/openwrt-passwall-build/apk.pub"
+    feed_data, _ = request(dependency_feed_url)
+    key_data, _ = request(dependency_key_url)
+    key_sha = "52802b143489214e13b78f96599a147a638205cc22d9dd6d71229504e38ddc00"
+    verify_digest(key_data, "sha256:" + key_sha)
     # Heartbeat-only commits keep GitHub schedules active but do not change image inputs.
     revision = subprocess.check_output([
         "git", "log", "-1", "--format=%H", "--", "Dockerfile", "start.sh", "rootfs",
@@ -122,10 +195,21 @@ def resolve():
     ], text=True).strip()
     if not revision:
         raise ValueError("Commit the integration source before resolving inputs")
-    return {
-        "base_image": f"docker.io/{BASE}@{base_digest}",
-        "base_digest": base_digest,
-        "base_created": config.get("created"),
+    state = {
+        "immortalwrt_version": version,
+        "immortalwrt_commit": base["commit"]["sha"],
+        "rootfs_url": base_url + filename,
+        "rootfs_sha256": rootfs_sha,
+        "dependency_feed_url": dependency_feed_url,
+        "dependency_feed_sha256": hashlib.sha256(feed_data).hexdigest(),
+        "dependency_key_url": dependency_key_url,
+        "dependency_key_sha256": key_sha,
+        "passwall_release": pw["tag_name"],
+        "passwall_version": pw_version,
+        "passwall_url": app["browser_download_url"],
+        "passwall_sha256": app["digest"].removeprefix("sha256:"),
+        "passwall_i18n_url": i18n["browser_download_url"],
+        "passwall_i18n_sha256": i18n["digest"].removeprefix("sha256:"),
         "handler_version": tag,
         "handler_url": url,
         "handler_source_url": f"https://github.com/ThisSeanZhang/landscape/archive/refs/tags/{tag}.tar.gz",
@@ -133,16 +217,12 @@ def resolve():
         "source_revision": revision,
         "resolved_at": datetime.now(timezone.utc).isoformat(),
     }
+    state["inputs_digest"] = inputs_digest(state)
+    return state
 
 
 def same_inputs(labels, state):
-    expected = {
-        "org.opencontainers.image.base.digest": state["base_digest"],
-        "dev.landscape.handler.version": state["handler_version"],
-        "dev.landscape.handler.sha256": state["handler_sha256"],
-        "org.opencontainers.image.revision": state["source_revision"],
-    }
-    return all(labels.get(key) == value for key, value in expected.items())
+    return labels.get("dev.landscape.inputs.digest") == state["inputs_digest"]
 
 
 def main():
@@ -177,6 +257,13 @@ def main():
                     output.write(f"{key}={value}\n")
     print(json.dumps(outputs, indent=2))
     if build:
+        for key, filename in (("rootfs", "rootfs.tar.gz"), ("passwall", "passwall.apk"),
+                              ("passwall_i18n", "passwall-zh.apk"),
+                              ("dependency_feed", "packages.adb"),
+                              ("dependency_key", "passwall-build.pem")):
+            content, _ = request(state[key + "_url"])
+            verify_digest(content, "sha256:" + state[key + "_sha256"])
+            Path("build", filename).write_bytes(content)
         binary, _ = request(state["handler_url"])
         verify_digest(binary, "sha256:" + state["handler_sha256"])
         if not binary.startswith(b"\x7fELF\x02\x01"):

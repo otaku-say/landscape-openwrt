@@ -17,8 +17,11 @@ services:
         soft: -1
         hard: -1
     environment:
-      # 默认使用可直连的上游 DNS，不依赖 Landscape 的 LAN DNS 监听。
-      # 修改后只更新仍由本镜像管理的 DNS；不会覆盖 PassWall/自定义 DNS。
+      # 必填：改成至少 12 字符的密码，root 用于 LuCI 和 SSH 登录。
+      # 每次启动均以此值设置密码；修改后执行 docker compose up -d。
+      # 密码含 $ 时写为 $$，避免 Compose 插值。不需要 .env。
+      LAND_ROOT_PASSWORD: "CHANGE_ME_BEFORE_START"
+      # 仅首次初始化 DNS；之后由 LuCI/PassWall 维护。
       LAND_DNS_ADDR: "223.5.5.5"
       LAND_REDIRECT_LOG_LEVEL: "INFO"
     sysctls:
@@ -34,8 +37,6 @@ services:
       - "10.10.10.1:8000:80"
       - "10.10.10.1:8443:443"
       - "10.10.10.1:2222:22"
-      # ttyd 使用独立端口；HTTPS LuCI 中点击“Open terminal”新窗口打开。
-      - "10.10.10.1:7681:7681"
     volumes:
       - type: bind
         source: /root/.lkit/landscape/data/unix_link
@@ -44,8 +45,9 @@ services:
         bind:
           create_host_path: false
       # 不持久化整个 /etc 或根目录，否则会遮住新镜像文件。
-      - openwrt-config:/etc/config
-      - dropbear-keys:/etc/dropbear
+      # 大版本重构使用全新卷，不读取或迁移旧 OpenWrt 配置。
+      - immortalwrt-config:/etc/config
+      - immortalwrt-dropbear:/etc/dropbear
     networks:
       edge:
         ipv4_address: 172.30.80.2
@@ -74,5 +76,5 @@ networks:
           gateway: fd70:6c61:6e64:80::1
 
 volumes:
-  openwrt-config:
-  dropbear-keys:
+  immortalwrt-config:
+  immortalwrt-dropbear:

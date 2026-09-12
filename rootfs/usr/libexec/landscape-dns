@@ -1,28 +1,11 @@
 #!/bin/sh
 set -eu
-dns=$(uci get landscape.container.dns)
-initialized=$(uci -q get landscape.container.initialized || true)
-servers=$(uci -q get 'dhcp.@dnsmasq[0].server' || true)
-previous=$(uci -q get landscape.container.managed_dns || true)
-checked=$(uci -q get landscape.container.dns_migration_v2 || true)
-noresolv=$(uci -q get 'dhcp.@dnsmasq[0].noresolv' || true)
-passwall=$(uci -q get 'passwall.@global[0].enabled' || true)
-# Migrate the old image's exact default once; never replace custom or local proxy DNS.
-if [ -z "$previous" ] && [ "$checked" != 1 ]; then previous=10.10.10.1; fi
-if [ "$initialized" != 1 ] || {
-    [ -n "$previous" ] && [ "$servers" = "$previous" ] &&
-    [ "$noresolv" = 1 ] && [ "$passwall" != 1 ];
-}; then
-    if [ "$initialized" = 1 ] && [ ! -f /etc/config/.landscape-dhcp-before-dns-v2 ]; then
-        cp -p /etc/config/dhcp /etc/config/.landscape-dhcp-before-dns-v2
-    fi
-    uci set 'dhcp.@dnsmasq[0].noresolv=1'
-    uci set 'dhcp.@dnsmasq[0].localservice=0'
-    uci -q delete 'dhcp.@dnsmasq[0].server' || true
-    uci add_list "dhcp.@dnsmasq[0].server=$dns"
-    uci set "landscape.container.managed_dns=$dns"
-    uci commit dhcp
-fi
+# New generation only: initialize once, then leave LuCI/PassWall DNS untouched.
+[ "$(uci -q get landscape.container.initialized || true)" != 1 ] || exit 0
+uci set 'dhcp.@dnsmasq[0].noresolv=1'
+uci set 'dhcp.@dnsmasq[0].localservice=0'
+uci -q delete 'dhcp.@dnsmasq[0].server' || true
+uci add_list "dhcp.@dnsmasq[0].server=$(uci get landscape.container.dns)"
+uci commit dhcp
 uci set landscape.container.initialized=1
-uci set landscape.container.dns_migration_v2=1
 uci commit landscape
