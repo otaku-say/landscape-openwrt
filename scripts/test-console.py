@@ -72,6 +72,7 @@ def check(root, name=None):
         def inside(*args):
             return subprocess.check_output(['docker', 'exec', name, *args], text=True).strip()
         inside('/usr/libexec/landscape-console', '--check')
+        assert inside('cat', '/proc/cmdline') == 'console=ttyS0,115200n8'
         assert inside('cat', '/etc/inittab').splitlines() == [
             '::sysinit:/etc/init.d/rcS S boot', '::shutdown:/etc/init.d/rcS K shutdown',
         ]

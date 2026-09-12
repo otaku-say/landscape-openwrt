@@ -72,6 +72,7 @@ sudo tcpdump -p -l -nne -s 256 -i ld-owrt-test 'port 53 or icmp6' > build/smoke-
 dns_capture_pid=$!
 
 # Dedicated PTYs represent the VM serial console and virtual terminal, not runner hardware.
+cp scripts/console-entrypoint.sh "$socket_dir/console-entrypoint.sh"
 python3 scripts/test-console.py serve "$socket_dir" > build/smoke-console.log 2>&1 &
 console_pid=$!
 for _ in {1..20}; do [[ ! -s "$socket_dir/console-devices.json" ]] || break; sleep 1; done
@@ -85,7 +86,7 @@ start_container() {
         --mount "type=bind,src=$serial_device,dst=/dev/console" \
         --mount "type=bind,src=$serial_device,dst=/dev/kmsg" \
         --mount "type=bind,src=$vt_device,dst=/dev/tty1" \
-        --mount "type=bind,src=$socket_dir/console-cmdline,dst=/proc/cmdline,readonly" \
+        --entrypoint /bin/sh \
         --ip 172.30.80.2 --ip6 fd70:6c61:6e64:80::2 \
         --label ld_flow_edge=true --ulimit memlock=-1:-1 \
         -e LAND_DNS_ADDR -e LAND_ROOT_PASSWORD -e TZ \
@@ -93,7 +94,8 @@ start_container() {
         --sysctl net.ipv4.conf.lo.accept_local=1 \
         --sysctl net.ipv6.conf.all.disable_ipv6=0 \
         --sysctl net.ipv6.conf.default.disable_ipv6=0 \
-        -v "$socket_dir:/ld_unix_link:ro" -v "$volume:/etc/config" -v "$keys:/etc/dropbear" "$image"
+        -v "$socket_dir:/ld_unix_link:ro" -v "$volume:/etc/config" -v "$keys:/etc/dropbear" \
+        "$image" /ld_unix_link/console-entrypoint.sh
 }
 wait_healthy() {
     local deadline=$((SECONDS + 180))
