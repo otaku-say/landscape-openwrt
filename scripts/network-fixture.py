@@ -76,7 +76,7 @@ def management(name):
     result = command('ip', 'netns', 'exec', CLIENT, sys.executable, 'scripts/test-management.py',
                      '172.30.80.2,fd70:6c61:6e64:80::2', *ports, timeout=90)
     print(result, flush=True)
-    print('PASS: routed IPv4/ULA management without host publishing, custom accept rules or Landscape LR', flush=True)
+    print('PASS: baseline routed IPv4/ULA management without host port publishing', flush=True)
     for port in ports + ['53']:
         result = subprocess.run(['ip', 'netns', 'exec', CLIENT, 'curl', '--noproxy', '*',
                                  '--interface', '192.0.2.2', '--max-time', '2',

@@ -30,7 +30,7 @@ for password in ('1', '123', 'simple', 'value$with# spaces'):
         assert service['environment']['TZ'] == 'Asia/Shanghai'
         assert 'ports' not in service and 'expose' not in service
         assert 'LAN_BIND_IP' not in service['environment']
-        for key, value in [('LUCI_HTTP_PORT', '8000'), ('LUCI_HTTPS_PORT', '8443'), ('SSH_PORT', '2222')]:
+        for key, value in [('LUCI_HTTP_PORT', '80'), ('LUCI_HTTPS_PORT', '443'), ('SSH_PORT', '22')]:
             assert service['environment'][key] == value
         for family in ('ipv4', 'ipv6'):
             assert config['networks']['edge']['driver_opts'][f'com.docker.network.bridge.gateway_mode_{family}'] == 'nat-unprotected'

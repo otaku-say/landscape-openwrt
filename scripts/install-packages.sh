@@ -42,10 +42,14 @@ done < /tmp/passwall-packages.txt
 # Signature verification stays enabled for every downloaded dependency.
 # shellcheck disable=SC2086
 apk --update-cache add $deps "$@" haproxy kmod-nft-tproxy kmod-nft-socket \
-    bash unzip openssl-util shadow-chpasswd zoneinfo-all
+    kmod-nft-nat kmod-nf-reject kmod-nf-reject6 \
+    bash unzip openssl-util shadow-chpasswd zoneinfo-all patch
 # These two upstream release APKs are authenticated by their GitHub SHA256 above.
 # Limit the trust exception to an offline transaction: no unsigned remote feeds.
 apk --no-network --allow-untrusted add /tmp/packages/passwall.apk /tmp/packages/passwall-zh.apk
+# Keep upstream proxy behavior, only replace lsmod-based UI/status gates.
+patch --batch --fuzz=0 --no-backup-if-mismatch -p1 -d / < /tmp/passwall-capabilities.patch
+apk del patch
 # Firmware upgrades and physical-disk helpers do not belong in this container.
 for package in luci-i18n-attendedsysupgrade-zh-cn luci-app-attendedsysupgrade \
     owut attendedsysupgrade-common autocore automount; do
@@ -77,4 +81,4 @@ mkdir -p /usr/share/landscape-openwrt/config
 cp /etc/config/uhttpd /etc/config/dropbear /usr/share/landscape-openwrt/config/
 cp /tmp/passwall-packages.txt /usr/share/landscape-openwrt/passwall-packages.txt
 rm -rf /tmp/packages /tmp/install-packages.sh /tmp/passwall-metadata.json \
-    /tmp/passwall-packages.txt /tmp/passwall-feed.adb /tmp/passwall-feed.json /tmp/apk-cache /var/cache/apk
+    /tmp/passwall-packages.txt /tmp/passwall-capabilities.patch /tmp/passwall-feed.adb /tmp/passwall-feed.json /tmp/apk-cache /var/cache/apk

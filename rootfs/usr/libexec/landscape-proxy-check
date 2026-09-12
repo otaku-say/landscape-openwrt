@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+case "${1-}" in --quiet) exec >/dev/null 2>&1 ;; '') ;; *) exit 2 ;; esac
+fail() { printf 'landscape-proxy-check: %s\n' "$*" >&2; exit 1; }
+for binary in nft fw4 ip dnsmasq; do
+    command -v "$binary" >/dev/null || fail "Missing userspace tool: $binary"
+done
+dnsmasq -v | grep -Eq '(^|[[:space:]])nftset([[:space:]]|$)' \
+    || fail 'dnsmasq must include nftset support.'
+ip -4 rule show >/dev/null || fail 'IPv4 policy routing is unavailable.'
+ip -6 rule show >/dev/null || fail 'IPv6 policy routing is unavailable.'
+# Check a private transaction without installing rules. The host kernel may load
+# its own matching modules; built-in support works without entries in lsmod.
+if ! nft --check --file - <<EOF
+add table inet landscape_proxy_probe_$$
+add chain inet landscape_proxy_probe_$$ prerouting_nat { type nat hook prerouting priority dstnat; policy accept; }
+add rule inet landscape_proxy_probe_$$ prerouting_nat meta nfproto ipv4 meta l4proto tcp redirect to :9
+add rule inet landscape_proxy_probe_$$ prerouting_nat meta nfproto ipv6 meta l4proto tcp redirect to :9
+add chain inet landscape_proxy_probe_$$ prerouting_mangle { type filter hook prerouting priority mangle; policy accept; }
+add rule inet landscape_proxy_probe_$$ prerouting_mangle meta nfproto ipv4 meta l4proto { tcp, udp } tproxy ip to 127.0.0.1:9
+add rule inet landscape_proxy_probe_$$ prerouting_mangle meta nfproto ipv6 meta l4proto { tcp, udp } tproxy ip6 to [::1]:9
+add rule inet landscape_proxy_probe_$$ prerouting_mangle meta l4proto { tcp, udp } socket transparent 1 meta mark set 1
+EOF
+then
+    fail 'Host kernel lacks usable nftables REDIRECT/TPROXY/socket support, or NET_ADMIN is unavailable. Install/load matching HOST modules; container OpenWrt kmods cannot replace the host kernel.'
+fi
+printf '%s\n' 'PASS: nftset, policy routing, IPv4/IPv6 REDIRECT, TPROXY and transparent socket support'

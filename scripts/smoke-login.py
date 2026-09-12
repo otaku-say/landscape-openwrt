@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check actual LuCI root authentication without printing credentials or cookies."""
 import http.cookiejar
+from html.parser import HTMLParser
 import json
 import os
 import subprocess
@@ -59,10 +60,27 @@ assert not wrong, 'LuCI accepted an incorrect password'
 if os.environ.get('PREVIOUS_ROOT_PASSWORD'):
     _, old = login(os.environ['PREVIOUS_ROOT_PASSWORD'])
     assert not old, 'Old root password still accepted after recreation'
+class ProxyControls(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.enabled = set()
+
+    def handle_starttag(self, tag, attrs):
+        values = dict(attrs)
+        if tag == 'input' and values.get('type') == 'checkbox' and 'disabled' not in values:
+            self.enabled.add(values.get('name', '').rsplit('.', 1)[-1])
+
+
 with opener.open(base + '/admin/services/passwall', timeout=20) as response:
     html = response.read().decode()
     assert response.status == 200 and ('cbi-passwall' in html or 'cbid.passwall.' in html), 'PassWall configuration form missing'
     assert 'Internal Server Error' not in html
+    assert 'Missing components, transparent proxy is unavailable.' not in html
+    assert '\u7f3a\u5c11\u7ec4\u4ef6\uff0c\u900f\u660e\u4ee3\u7406\u4e0d\u53ef\u7528' not in html
+    controls = ProxyControls()
+    controls.feed(html)
+    assert {'localhost_proxy', 'client_proxy'} <= controls.enabled, 'Transparent proxy controls are disabled'
+subprocess.check_call(['docker', 'exec', name, '/usr/libexec/landscape-proxy-check'])
 raw = subprocess.check_output(['docker', 'exec', name, 'apk', 'query', '--installed', '--format', 'json', '--fields', 'name,version', '*'])
 packages = {p['name']: p['version'] for p in json.loads(raw)}
 metadata = json.loads(subprocess.check_output(['docker', 'exec', name, 'cat', '/usr/share/landscape-openwrt/upstream.json']))

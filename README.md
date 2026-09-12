@@ -2,7 +2,7 @@
 
 [![Build](https://github.com/otaku-say/landscape-openwrt/actions/workflows/build.yml/badge.svg)](https://github.com/otaku-say/landscape-openwrt/actions/workflows/build.yml)
 
-从 **ImmortalWrt 最新正式版官方 x86_64 rootfs** 构建，安装 **PassWall 官方最新 Release APK 和简体中文包**，保留完整代理依赖及 Landscape 官方最新正式版 `redirect_pkg_handler-x86_64-static`。仅 `linux/amd64`。
+作为 **Landscape Flow 的双栈透明代理出口**：官方接应程序将标记流量交给 ImmortalWrt，由 PassWall 按节点和分流策略代理。采用最新正式版官方 x86_64 rootfs、PassWall 官方 APK 和简体中文包，保留完整代理依赖。仅 `linux/amd64`，可按 `.env` 部署到不同网络，不内置某个家庭 LAN、WAN 或运营商前缀。
 
 镜像：`ghcr.io/otaku-say/landscape-openwrt:latest`。
 
@@ -12,16 +12,18 @@
 
 | 用途 | 默认入口 |
 | --- | --- |
-| LuCI HTTP | `http://172.30.66.2:8000` |
-| LuCI HTTPS | `https://172.30.66.2:8443`，使用自签证书 |
-| SSH | `ssh -p 2222 root@172.30.66.2` |
-| ULA HTTP | `http://[fd70:6c61:6e64:66::2]:8000` |
-| ULA HTTPS | `https://[fd70:6c61:6e64:66::2]:8443` |
-| ULA SSH | `ssh -p 2222 root@fd70:6c61:6e64:66::2` |
+| LuCI HTTP | `http://172.30.66.2` |
+| LuCI HTTPS | `https://172.30.66.2`，使用自签证书 |
+| SSH | `ssh root@172.30.66.2` |
+| ULA HTTP | `http://[fd70:6c61:6e64:66::2]` |
+| ULA HTTPS | `https://[fd70:6c61:6e64:66::2]` |
+| ULA SSH | `ssh root@fd70:6c61:6e64:66::2` |
 
-**管理直连不依赖 Landscape 的 LAN 路由转发（LR）开关。** 网桥使用 Docker 原生双栈 `nat-unprotected` gateway mode：允许普通 Linux 路由访问未发布端口，保留容器出站 masquerade，不产生管理端口 DNAT。仅删除 `ports:` 而保留默认 `nat` 模式，会受到 Docker 未发布端口过滤，不能实现这一目标。
+**Landscape 部署必须为容器网桥开启 LAN 路由转发（LR）。** 管理与透明代理共用完整的 Landscape 转发路径，不兼容关闭此桥 LR 后的混合转发状态。部分接口走 eBPF、部分走内核时，宿主机 MASQUERADE 可能误改 LAN 回包地址；本项目不为该状态增加宿主机 NAT 补丁或专用服务。
 
-运行要求：**Docker Engine 28+、Docker Compose v2+、宿主机双栈转发开启**。客户端应以 Landscape 为网关，或有一条经 Landscape 到容器网段的路由；宿主机自定义防火墙不能阻断该 LAN 转发路径。Docker 的 gateway mode 不能替代这些路由条件。
+网桥保留双栈 `nat-unprotected` gateway mode，以允许访问原生容器端口并保留出站 masquerade。该设置不产生管理端口 DNAT，**也不替代 LR**。容器内部 NAT44/NAT66、官方 route-mode 接应、PassWall 的透明代理规则不因管理入口而削减。
+
+运行要求：**Docker Engine 28+、Docker Compose v2+、宿主机双栈转发开启，以及正确配置的 Landscape LAN/LR 服务**。客户端应以 Landscape 为网关，或有经 Landscape 到容器网段的路由；宿主机自定义防火墙不能阻断该路径。
 
 `nat-unprotected` 不为该网桥过滤未发布端口，访问控制由容器 firewall4 和宿主机 WAN 防火墙负责：
 
@@ -49,16 +51,16 @@ chmod 600 .env
 ```dotenv
 LAND_ROOT_PASSWORD='CHANGE_ME_BEFORE_START'
 TZ=Asia/Shanghai
-LUCI_HTTP_PORT=8000
-LUCI_HTTPS_PORT=8443
-SSH_PORT=2222
+LUCI_HTTP_PORT=80
+LUCI_HTTPS_PORT=443
+SSH_PORT=22
 ```
 
 **必须替换密码占位值。** 不限制密码长度或复杂度，短密码和纯数字均可；不接受空值、占位值或换行。用单引号包住密码，`$`、`#` 和空格按字面读取，不需要把 `$` 改成 `$$`。
 
 root 的 LuCI 和 SSH 使用同一个运行时密码。密码不是 build arg，不写入公开镜像或 UCI，设置后从 PID 1 的环境中移除；Docker 管理员仍能读取容器配置，应限制 `.env` 文件与 Docker 管理权限。真实 `.env` 不会提交或加入构建上下文。
 
-三个管理端口必须互不相同，范围为 1–65535，不带前导零，不能使用 DNS 的 53。每次启动都从镜像自带的服务配置生成 uhttpd、Dropbear 设置，再应用端口变量，不保留额外的旧监听入口。端口与密码修改后执行 `docker compose up -d` 生效；在 LuCI 中直接修改这些受控设置会在下次启动时被运行时参数覆盖。
+端口变量可省略，镜像及 Compose 默认均为 HTTP 80、HTTPS 443、SSH 22。三个管理端口必须互不相同，范围为 1–65535，不带前导零，不能使用 DNS 的 53。每次启动都从镜像自带的服务配置生成 uhttpd、Dropbear 设置，再应用端口变量，不保留额外的旧监听入口。端口与密码修改后执行 `docker compose up -d` 生效；在 LuCI 中直接修改这些受控设置会在下次启动时被运行时参数覆盖。
 
 `TZ` 支持 IANA 时区，例如 `Asia/Shanghai`、`Etc/UTC`、`Europe/Berlin`；包含完整时区数据，每次启动同步 LuCI 和本地时间，自动处理夏令时。不调整宿主机时钟、硬件时钟或启动 NTP 校时。
 
@@ -84,14 +86,14 @@ Docker 不能在已有网络上原地更改 gateway mode。全新部署需创建
 ## Landscape 与动态 IPv6
 
 1. 只连接一个 Docker bridge，使用 cgroup v2，保留 `ld_flow_edge: "true"` 和只读 socket 挂载；不使用 host/macvlan 网络、额外网卡或 `init: true`。
-2. 在 Landscape 将 `.env` 指定的网桥（默认 `br-openwrt`）设为 **LAN**。管理 IPv4/ULA 直连走普通路由，不要求此桥开启 LR。
-3. 使用代理 Flow 与动态公网 IPv6 时，为此桥配置 **LAN 路由转发（LR）** 和 **LANv6**。这与管理入口是独立的要求；关闭 LR 不代表代理 Flow 仍然可用。
+2. 在 Landscape 将 `.env` 指定的网桥（默认 `br-openwrt`）设为 **LAN**，开启 **LAN 路由转发（LR）**，并保证客户端 LAN 入口的 Landscape 转发配置正确。
+3. 为此桥配置 **LANv6** 获取动态公网 IPv6。LAN/LR/LANv6 是透明代理出口的部署配置，不为管理页面另建一套宿主机转发方案。
 4. LANv6 选纯 RA（SLAAC），从所选 WAN 的上游 PD 分配未占用的 `/64`，关闭 M/O、DHCPv6 和桥上的 DHCPv4。
 5. 容器保留 Docker ULA 和静态默认网关，设置 `accept_ra=2`、`accept_ra_defrtr=0`。netifd 重载后由 hotplug 恢复参数，公网地址不固化到 UCI。
 6. 容器自身流量应走正常 WAN，不能再次导向自身；多 WAN 上游选择与故障切换由宿主机策略决定。
 
 ```text
-管理：LAN 设备 -> Landscape 普通路由或 LR -> 容器 IP:原生端口
+管理：LAN 设备 -> Landscape LAN/LR -> 容器 IP:原生端口
 代理：LAN 设备 -> Landscape Flow -> Docker veth 标记流量
       -> redirect_pkg_handler --mode route -> firewall4 / PassWall -> WAN
 ```
@@ -99,6 +101,18 @@ Docker 不能在已有网络上原地更改 gateway mode。全新部署需创建
 接应使用 route 模式，不固定 TProxy 端口。容器关闭 DHCPv4/DHCPv6/RA/NDP 发送服务，开启 NAT44/NAT66 和同接口转发，禁用 flow offloading/full-cone。上游有效路由仍由宿主机提供。
 
 内核来自宿主机，必须支持 eBPF/TC、nftables、conntrack、IPv6 NAT 与代理所需 TPROXY/TUN；镜像中的 kmod 不会替换宿主内核。不要在容器中刷写固件或运行 sysupgrade。
+
+### 透明代理能力检查
+
+PassWall 上游用 `lsmod` 中的模块名称判定透明代理可用性；宿主模块尚未加载或能力编译进内核时，这种检查会误报“缺少组件”。本镜像仅适配 LuCI 和状态接口的能力判定，不修改代理核心、分流规则或伪造模块列表：
+
+```bash
+docker exec landscape-openwrt /usr/libexec/landscape-proxy-check
+```
+
+该命令检查 dnsmasq nftset、策略路由，并通过 `nft --check` 实际验证 IPv4/IPv6 REDIRECT、TCP/UDP TPROXY 和透明 socket 表达式，不安装测试规则。宿主机可按内核机制自动加载匹配模块；内置能力无需出现在 `lsmod`。启动时提前检查，健康检查与 PassWall 页面使用同一判定。
+
+若检查失败，LuCI 仍可用于诊断，但透明代理不会被标记为可用。查看 `/tmp/landscape-proxy-check.log`，由宿主机安装/加载与其内核版本匹配的 `nft_redir`、`nft_tproxy`、`nft_socket` 等模块；不能通过给容器安装另一版本的 OpenWrt kmod 修复宿主内核缺失。
 
 ## 配置与组件
 
@@ -148,9 +162,11 @@ docker exec landscape-openwrt nslookup www.baidu.com 127.0.0.1
 docker inspect --format '{{json .State.Health}}' landscape-openwrt
 ```
 
-CI 使用一个独立 veth LAN 客户端，经宿主机普通内核路由访问容器 IPv4/ULA；不运行 Landscape LR，不发布端口，也不添加临时放行/NAT 规则。检查 HTTP、HTTPS、SSH 原生入口、默认与自定义端口、旧端口关闭、非私网 IPv4 和公网 IPv6 管理阻断；实际验证 LuCI/SSH 正确与错误密码、密码更改、SSH 身份及 PassWall 配置持久化。
+CI 除基础管理测试外，还创建隔离 LAN/WAN：对 TCP/UDP 流量添加 Landscape VLAN 标记，由镜像中的真实官方接应程序去标记，再由实际启用的 PassWall 经隔离 VLESS 节点访问目标。分别验证 IPv4/IPv6 目标与两种地址族的代理节点，通过目标观察到的来源确认流量确实经过代理，而非直接绕行。CI 的 TC 转发夹具模拟启用 LR 的双向路径，不修改宿主机 NAT 来让测试通过。
 
-另覆盖完整代理核心、dnsmasq A/AAAA、模拟接应注册、双栈 NAT、SLAAC 获取/前缀更新/netifd 重启。真实 Landscape LR/Flow、用户宿主机防火墙、订阅节点、代理 TCP/UDP/IPv6 与 DNS 泄漏仍需现场验收；CI 不冒充真实路由器验证。
+另检查容器 IPv4/ULA 出网 NAT 保留、代理开启时的管理可达性、默认和自定义管理端口、旧端口关闭、访问限制、真实 LuCI/SSH 密码登录、SSH 身份与 PassWall 配置持久化，以及 dnsmasq A/AAAA、模拟注册和 SLAAC 前缀更新。
+
+CI 没有运行完整 Landscape 路由器，不能据此承诺关闭 LR 仍可用。现场仍需验证真实 Flow 分类、运营商 WAN/PD、实际订阅、TCP/UDP/IPv6 和 DNS 泄漏；不得将测试节点当作用户订阅或真实 ISP 验收。
 
 健康检查代表本地服务、路由和 RA 参数就绪，不承诺外网或代理节点可用。镜像不修改宿主机已有临时 IPv6 路由或管理 SNAT 规则。
 

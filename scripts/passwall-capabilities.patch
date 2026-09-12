@@ -1,0 +1,46 @@
+--- a/usr/lib/lua/luci/model/cbi/passwall/client/global.lua
++++ b/usr/lib/lua/luci/model/cbi/passwall/client/global.lua
+@@ -571,10 +571,6 @@
+ ---- Check the transparent proxy component
+-local handle = io.popen("lsmod")
+-local mods = ""
+-if handle then
+-	mods = handle:read("*a") or ""
+-	handle:close()
+-end
++-- Containers share the host kernel; test capability instead of module names.
++local proxy_available = luci.sys.call("/usr/libexec/landscape-proxy-check --quiet") == 0
+ 
+-if (mods:find("REDIRECT") and mods:find("TPROXY")) or (mods:find("nft_redir") and mods:find("nft_tproxy")) then
++if proxy_available then
+ 	o = s:taboption("Proxy", Flag, "localhost_proxy", translate("Localhost Proxy"), translate("When selected, localhost can transparent proxy."))
+--- a/usr/lib/lua/luci/model/cbi/passwall/client/other.lua
++++ b/usr/lib/lua/luci/model/cbi/passwall/client/other.lua
+@@ -120,7 +120,6 @@
+ ---- Check the transparent proxy component
+-local handle = io.popen("lsmod")
+-local mods = handle and handle:read("*a") or ""
+-if handle then handle:close() end
++-- Do not confuse absent module-list entries with absent kernel capabilities.
++local proxy_available = luci.sys.call("/usr/libexec/landscape-proxy-check --quiet") == 0
+ 
+-if (mods:find("REDIRECT") and mods:find("TPROXY")) or (mods:find("nft_redir") and mods:find("nft_tproxy")) then
++if proxy_available then
+ 	o = s:option(ListValue, "tcp_proxy_way", translate("TCP Proxy Way"))
+@@ -143,3 +142,3 @@
+-	if mods:find("ip6table_mangle") or mods:find("nft_tproxy") then
++	if proxy_available then
+ 		---- IPv6 TProxy
+ 		o = s:option(Flag, "ipv6_tproxy", translate("IPv6 TProxy"),
+--- a/usr/lib/lua/luci/controller/passwall.lua
++++ b/usr/lib/lua/luci/controller/passwall.lua
+@@ -341,8 +341,5 @@
+ 		local has_tproxy = api.get_cache_var("HAS_TPROXY")
+ 		if not has_tproxy then
+-			local handle = io.popen("lsmod")
+-			local mods = handle and handle:read("*a") or ""
+-			if handle then handle:close() end
+-			has_tproxy = (mods:find("TPROXY") or mods:find("nft_tproxy")) and "1" or "0"
++			has_tproxy = luci.sys.call("/usr/libexec/landscape-proxy-check --quiet") == 0 and "1" or "0"
+ 			api.set_cache_var("HAS_TPROXY", has_tproxy)
+ 		end

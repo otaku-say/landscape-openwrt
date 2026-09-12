@@ -12,9 +12,9 @@ mkdir -p build
 python=build/test-venv/bin/python
 # Generated per CI run; never trace or print this environment.
 export LAND_ROOT_PASSWORD TZ LUCI_HTTP_PORT LUCI_HTTPS_PORT SSH_PORT
-LUCI_HTTP_PORT=8000
-LUCI_HTTPS_PORT=8443
-SSH_PORT=2222
+LUCI_HTTP_PORT=80
+LUCI_HTTPS_PORT=443
+SSH_PORT=22
 TZ=Asia/Shanghai
 LAND_ROOT_PASSWORD=$(openssl rand -hex 20)
 cleanup() {
@@ -24,6 +24,7 @@ cleanup() {
     timeout 15 docker exec "$name" uci export dhcp > build/smoke-uci-dhcp.log 2>&1 || true
     timeout 15 docker exec "$name" uci export dropbear > build/smoke-uci-dropbear.log 2>&1 || true
     timeout 15 docker exec "$name" netstat -lntp > build/smoke-listeners.log 2>&1 || true
+    timeout 15 docker exec "$name" cat /tmp/landscape-proxy-check.log > build/smoke-proxy-check.log 2>&1 || true
     docker exec "$name" ip -4 route > build/smoke-ipv4.log 2>&1 || true
     docker exec "$name" ip -6 route > build/smoke-ipv6.log 2>&1 || true
     docker exec "$name" nft list ruleset > build/smoke-nft.log 2>&1 || true
@@ -107,6 +108,7 @@ timeout 45 docker run --rm --name "${name}-client" --privileged --no-healthcheck
 
 "$python" scripts/smoke-login.py "$name"
 sudo "$python" scripts/network-fixture.py check "$name" "$socket_dir"
+sudo "$python" scripts/test-flow-exit.py "$name"
 # OpenWrt mounts /tmp itself; docker cp may address the underlying mount instead.
 docker exec -i "$name" sh -s < scripts/smoke-dns.sh
 docker exec "$name" sh -ec '
@@ -153,4 +155,4 @@ docker exec "$name" sh -ec '
   uci delete passwall.landscape_smoke
   uci commit
 '
-echo 'PASS: native/routed management without LR or host publishing, port/password rotation, persistent SSH identity, full PassWall cores and dual-stack enrollment/NAT/DNS/SLAAC.'
+echo 'PASS: real tagged PassWall TCP/UDP exits, preserved outbound NAT, native management, password/port rotation and DNS/SLAAC.'

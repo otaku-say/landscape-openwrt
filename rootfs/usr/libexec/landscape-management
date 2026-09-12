@@ -1,9 +1,9 @@
 #!/bin/sh
 set -eu
 fail() { printf 'landscape-management: %s\n' "$*" >&2; exit 1; }
-http=${LUCI_HTTP_PORT-8000}
-https=${LUCI_HTTPS_PORT-8443}
-ssh=${SSH_PORT-2222}
+http=${LUCI_HTTP_PORT-80}
+https=${LUCI_HTTPS_PORT-443}
+ssh=${SSH_PORT-22}
 for port in "$http" "$https" "$ssh"; do
     case "$port" in ''|*[!0-9]*|0*|??????*) fail 'Ports must be decimal integers from 1 to 65535 without leading zeros.' ;; esac
     [ "$port" -le 65535 ] || fail 'Port exceeds 65535.'

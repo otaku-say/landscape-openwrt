@@ -4,7 +4,7 @@ ADD build/rootfs.tar.gz /
 ENV PATH=/usr/sbin:/usr/bin:/sbin:/bin
 COPY build/passwall.apk build/passwall-zh.apk /tmp/packages/
 COPY build/install-inputs.json /usr/share/landscape-openwrt/install-inputs.json
-COPY scripts/install-packages.sh scripts/passwall-packages.txt /tmp/
+COPY scripts/install-packages.sh scripts/passwall-packages.txt scripts/passwall-capabilities.patch /tmp/
 COPY build/packages.adb /tmp/passwall-feed.adb
 COPY build/passwall-build.pem /etc/apk/keys/openwrt-passwall-build.pem
 RUN /bin/sh /tmp/install-packages.sh
@@ -52,9 +52,9 @@ ENV PATH=/usr/sbin:/usr/bin:/sbin:/bin \
     TZ=Asia/Shanghai \
     LAND_DNS_ADDR=223.5.5.5 \
     LAND_REDIRECT_LOG_LEVEL=INFO \
-    LUCI_HTTP_PORT=8000 \
-    LUCI_HTTPS_PORT=8443 \
-    SSH_PORT=2222
+    LUCI_HTTP_PORT=80 \
+    LUCI_HTTPS_PORT=443 \
+    SSH_PORT=22
 STOPSIGNAL SIGTERM
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
   CMD /usr/libexec/landscape-healthcheck

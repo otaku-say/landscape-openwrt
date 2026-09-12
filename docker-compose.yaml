@@ -21,9 +21,9 @@ services:
       TZ: ${TZ:?Set TZ in .env}
       LAND_DNS_ADDR: ${LAND_DNS_ADDR:?Set LAND_DNS_ADDR in .env}
       LAND_REDIRECT_LOG_LEVEL: ${LAND_REDIRECT_LOG_LEVEL:?Set LAND_REDIRECT_LOG_LEVEL in .env}
-      LUCI_HTTP_PORT: ${LUCI_HTTP_PORT:?Set LUCI_HTTP_PORT in .env}
-      LUCI_HTTPS_PORT: ${LUCI_HTTPS_PORT:?Set LUCI_HTTPS_PORT in .env}
-      SSH_PORT: ${SSH_PORT:?Set SSH_PORT in .env}
+      LUCI_HTTP_PORT: ${LUCI_HTTP_PORT:-80}
+      LUCI_HTTPS_PORT: ${LUCI_HTTPS_PORT:-443}
+      SSH_PORT: ${SSH_PORT:-22}
     sysctls:
       net.ipv4.conf.lo.accept_local: "1"
       net.ipv4.conf.all.rp_filter: "0"
@@ -62,8 +62,9 @@ networks:
     driver_opts:
       com.docker.network.bridge.name: ${EDGE_BRIDGE_NAME:?Set EDGE_BRIDGE_NAME in .env}
       com.docker.network.bridge.enable_ip_masquerade: "true"
-      # Docker Engine 28+；允许普通内核路由直连，不依赖 Landscape LR。
-      # 不使用 Docker 的发布端口过滤；管理/DNS 访问由容器 firewall4 限制。
+      # Docker Engine 28+；允许访问容器原生端口，不发布宿主机端口。
+      # Landscape 部署必须为此桥开启 LR，保持管理与 Flow 流量的完整转发路径。
+      # 保留出网 NAT；管理/DNS 的访问权限由容器 firewall4 限制。
       com.docker.network.bridge.gateway_mode_ipv4: nat-unprotected
       com.docker.network.bridge.gateway_mode_ipv6: nat-unprotected
     ipam:
