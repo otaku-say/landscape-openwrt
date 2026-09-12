@@ -78,5 +78,5 @@ networks:
           gateway: fd70:6c61:6e64:66::1
 
 volumes:
-  immortalwrt-config:
-  immortalwrt-dropbear:
+  landscape-openwrt-config:
+  landscape-openwrt-dropbear:
