@@ -48,6 +48,7 @@ RUN set -eu; \
       if [ -x "/etc/init.d/$service" ]; then "/etc/init.d/$service" disable; fi; \
     done
 ENV PATH=/usr/sbin:/usr/bin:/sbin:/bin \
+    TZ=Asia/Shanghai \
     LAND_DNS_ADDR=223.5.5.5 \
     LAND_REDIRECT_LOG_LEVEL=INFO
 EXPOSE 22 80 443

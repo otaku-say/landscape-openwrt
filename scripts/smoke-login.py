@@ -44,6 +44,13 @@ assert packages['luci-app-passwall'] == metadata['passwall_version']
 assert 'luci-i18n-passwall-zh-cn' in packages
 for package in ('geoview', 'chinadns-ng', 'xray-core', 'sing-box', 'hysteria', 'haproxy'):
     assert package in packages, package
+zone = subprocess.check_output(['docker', 'exec', name, 'uci', 'get', 'system.@system[0].zonename']).decode().strip()
+assert zone == os.environ['TZ']
+for epoch, expected in ((1767225600, '+0800' if zone == 'Asia/Shanghai' else '+0100'),
+                        (1782864000, '+0800' if zone == 'Asia/Shanghai' else '+0200')):
+    actual = subprocess.check_output(['docker', 'exec', name, 'date', '-d', '@' + str(epoch), '+%z']).decode().strip()
+    assert actual == expected, (zone, epoch, actual, expected)
+print('PASS: TZ matches LuCI and winter/summer timezone offsets after recreation')
 feeds = subprocess.check_output(['docker', 'exec', name, 'cat', '/etc/apk/repositories.d/distfeeds.list']).decode()
 assert 'https://mirrors.ustc.edu.cn/immortalwrt/' in feeds
 assert 'https://downloads.immortalwrt.org' not in feeds and 'mirrors.vsean.net' not in feeds

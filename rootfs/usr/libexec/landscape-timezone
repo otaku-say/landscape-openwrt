@@ -1,0 +1,15 @@
+#!/bin/sh
+set -eu
+tz=$(uci get landscape.container.timezone)
+case "$tz" in ''|/*|*..*|*[!A-Za-z0-9_+/-]*)
+    echo 'landscape-timezone: invalid IANA timezone' >&2; exit 1 ;;
+esac
+zone=/usr/share/zoneinfo/$tz
+[ -f "$zone" ] || { echo 'landscape-timezone: unknown IANA timezone' >&2; exit 1; }
+# TZif's final line is the POSIX fallback, including DST rules when applicable.
+posix=$(tail -n 1 "$zone")
+uci set "system.@system[0].zonename=$tz"
+uci set "system.@system[0].timezone=$posix"
+uci commit system
+ln -sf "$zone" /tmp/localtime
+rm -f /tmp/TZ

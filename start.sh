@@ -25,6 +25,10 @@ gw6=$(ip -6 route show default dev eth0 | awk '$1 == "default" && $2 == "via" {p
 [ -n "$ip6" ] && [ -n "$gw6" ] || fail 'Docker must supply an IPv6 address and gateway; enable IPv6 on its bridge.'
 log_level=${LAND_REDIRECT_LOG_LEVEL:-INFO}
 case "$log_level" in OFF|ERROR|WARN|INFO|DEBUG|TRACE) ;; *) fail 'Invalid LAND_REDIRECT_LOG_LEVEL.' ;; esac
+tz=${TZ:-Asia/Shanghai}
+case "$tz" in ''|/*|*..*|*[!A-Za-z0-9_+/-]*) fail 'TZ must be a valid IANA timezone.' ;; esac
+[ -f "/usr/share/zoneinfo/$tz" ] || fail 'Unknown TZ; use an installed IANA timezone such as Asia/Shanghai.'
+export TZ="$tz"
 dns=${LAND_DNS_ADDR:-223.5.5.5}
 case "$dns" in ''|*[!0-9a-fA-F:.]*) fail 'LAND_DNS_ADDR must be an IP address.' ;; esac
 
@@ -65,6 +69,7 @@ for address in $ip6; do uci add_list network.lan.ip6addr="$address"; done
 uci commit network
 [ -f /etc/config/landscape ] || touch /etc/config/landscape
 uci set landscape.container=container
+uci set "landscape.container.timezone=$tz"
 uci set landscape.container.generation=2
 uci set landscape.container.log_level="$log_level"
 uci set landscape.container.dns="$dns"

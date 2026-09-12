@@ -40,7 +40,7 @@ done < /tmp/passwall-packages.txt
 # Signature verification stays enabled for every downloaded dependency.
 # shellcheck disable=SC2086
 apk --no-cache add $deps "$@" haproxy kmod-nft-tproxy kmod-nft-socket \
-    bash unzip openssl-util shadow-chpasswd
+    bash unzip openssl-util shadow-chpasswd zoneinfo-all
 # These two upstream release APKs are authenticated by their GitHub SHA256 above.
 # Limit the trust exception to an offline transaction: no unsigned remote feeds.
 apk --no-network --allow-untrusted add /tmp/packages/passwall.apk /tmp/packages/passwall-zh.apk
@@ -61,6 +61,8 @@ done
 apk info -e luci-app-passwall luci-i18n-passwall-zh-cn xray-core >/dev/null
 # Do not let first-boot board defaults override the runtime password or feed URLs.
 rm -f /etc/uci-defaults/50-root-passwd
+# Kernel clock/timezone is shared with the host; only set userspace localtime.
+sed -i '/hwclock -u --systz/d' /etc/init.d/system
 sed -i 's|https://mirrors.vsean.net/openwrt|https://mirrors.ustc.edu.cn/immortalwrt|g' \
     /etc/uci-defaults/99-default-settings-chinese
 cp /tmp/passwall-packages.txt /usr/share/landscape-openwrt/passwall-packages.txt

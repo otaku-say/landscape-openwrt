@@ -10,7 +10,8 @@ fixture_pid=
 mkdir -p build
 python=build/test-venv/bin/python
 # Generated per CI run; never trace or print this environment.
-export LAND_ROOT_PASSWORD
+export LAND_ROOT_PASSWORD TZ
+TZ=Asia/Shanghai
 LAND_ROOT_PASSWORD=$(openssl rand -hex 20)
 cleanup() {
     timeout 15 docker logs "$name" > build/smoke-docker.log 2>&1 || true
@@ -51,7 +52,7 @@ start_container() {
     docker run -d --name "$name" --privileged --network "$network" \
         --ip 172.30.80.2 --ip6 fd70:6c61:6e64:80::2 \
         --label ld_flow_edge=true --ulimit memlock=-1:-1 \
-        -e LAND_DNS_ADDR=172.30.80.1 -e LAND_ROOT_PASSWORD \
+        -e LAND_DNS_ADDR=172.30.80.1 -e LAND_ROOT_PASSWORD -e TZ \
         --sysctl net.ipv4.conf.lo.accept_local=1 \
         --sysctl net.ipv6.conf.all.disable_ipv6=0 \
         --sysctl net.ipv6.conf.default.disable_ipv6=0 \
@@ -123,6 +124,7 @@ docker exec "$name" sh -ec '
 docker rm -f "$name"
 export PREVIOUS_ROOT_PASSWORD="$LAND_ROOT_PASSWORD"
 LAND_ROOT_PASSWORD=$(openssl rand -hex 20)
+TZ=Europe/Berlin
 start_container
 wait_healthy
 [[ $(docker exec "$name" uci get landscape.test.value) == retained ]]

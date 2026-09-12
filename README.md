@@ -34,6 +34,7 @@ cd landscape-openwrt
 ```yaml
 environment:
   LAND_ROOT_PASSWORD: "CHANGE_ME_BEFORE_START"
+  TZ: "Asia/Shanghai"
   LAND_DNS_ADDR: "223.5.5.5"
   LAND_REDIRECT_LOG_LEVEL: "INFO"
 ```
@@ -41,6 +42,8 @@ environment:
 **必须替换 `LAND_ROOT_PASSWORD`**，至少 12 字符，不接受空值、占位值或换行。不需要 `.env`；密码含 `$` 时在 Compose 中写成 `$$`。这是运行时变量，不是 Docker build arg，不写入公开镜像或 UCI。Docker 管理员仍可通过容器配置查看环境变量，应限制 Compose 文件与 Docker 管理权限。
 
 用户名为 **root**，LuCI 和 SSH 使用同一个密码。每次启动都按该变量设置 root 密码；修改变量后执行 `docker compose up -d`，容器重建后密码不会退回上游默认值。在 LuCI 中单独修改的密码会在下次启动时被 Compose 值覆盖。
+
+`TZ` 支持 IANA 名称，例如 `Asia/Shanghai`、`Etc/UTC`、`Europe/Berlin`。镜像包含完整时区数据，每次启动同步 LuCI 的系统时区和本地时间，自动处理夏令时；修改后执行 `docker compose up -d`。不会调整宿主机系统时钟、硬件时钟或开启 NTP 校时。
 
 保留你的宿主机管理地址、socket 路径和网段设置。仓库当前 Compose 默认：
 
