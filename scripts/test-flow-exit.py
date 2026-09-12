@@ -76,13 +76,15 @@ def tagged_redirect(name):
     network = json.loads(run('docker', 'inspect', '--format', '{{json .NetworkSettings.Networks}}', name))
     mac = next(iter(network.values()))['MacAddress']
     source_mac = Path(f'/sys/class/net/{BRIDGE}/address').read_text().strip()
+    peer_index = int(inside(name, 'cat', '/sys/class/net/eth0/iflink'))
+    peer = next(link['ifname'] for link in json.loads(run('ip', '-j', 'link', 'show')) if link['ifindex'] == peer_index)
     for priority, (protocol, address) in enumerate((('ip', REMOTE4), ('ipv6', REMOTE6)), 20):
         # VLAN 0xc07 is Landscape flow 7. The shipped route handler must pop it.
         run('tc', 'filter', 'replace', 'dev', LAN_LINK, 'ingress', 'protocol', protocol, 'pref', str(priority),
             'flower', 'skip_hw', 'dst_ip', address, 'action', 'pedit', 'ex',
             'munge', 'eth', 'dst', 'set', mac, 'munge', 'eth', 'src', 'set', source_mac,
             'action', 'vlan', 'push', 'protocol', '802.1Q', 'id', '3079',
-            'action', 'mirred', 'egress', 'redirect', 'dev', BRIDGE)
+            'action', 'mirred', 'egress', 'redirect', 'dev', peer)
 
 
 def requests(prefix, label):
@@ -135,6 +137,10 @@ def main():
             print('PASS: actual IPv4 and ULA outbound masquerading preserved outside the LAN interface', flush=True)
             lan_return_path()
             tagged_redirect(name)
+            candidate_pid = run('docker', 'inspect', '--format', '{{.State.Pid}}', name)
+            capture = (root / 'capture.log').open('w')
+            processes.append(subprocess.Popen(['nsenter', '--target', candidate_pid, '--net', 'tcpdump',
+                                              '-l', '-nne', '-i', 'any', '-s', '128'], stdout=capture, stderr=subprocess.STDOUT))
             uci(name, {'landscape_exit': 'nodes', 'landscape_exit.remarks': 'isolated-ci-exit',
                        'landscape_exit.type': 'Xray', 'landscape_exit.protocol': 'vless',
                        'landscape_exit.address': '203.0.113.2', 'landscape_exit.port': '10443',
@@ -155,9 +161,8 @@ def main():
                 inside(name, '/etc/init.d/passwall', 'restart', timeout=90)
                 time.sleep(5)
                 assert 'PSW' in inside(name, 'nft', 'list', 'ruleset'), 'PassWall did not create transparent proxy rules'
+                requests(('nsenter', '--target', candidate_pid, '--net'), 'Container localhost')
                 requests(('ip', 'netns', 'exec', CLIENT), 'Landscape-tagged client')
-                pid = run('docker', 'inspect', '--format', '{{.State.Pid}}', name)
-                requests(('nsenter', '--target', pid, '--net'), 'Container localhost')
                 print(f'PASS: proxy transport to {node_address} with LR-style forwarding and unchanged host NAT', flush=True)
             assert '203.0.113.1:' in (root / 'access.log').read_text(), 'VLESS node did not observe preserved IPv4 outbound NAT'
             # Management remains reachable while transparent proxying is enabled.
@@ -169,9 +174,12 @@ def main():
             Path('build/smoke-passwall-nft.log').write_text(inside(name, 'nft', 'list', 'ruleset', check=False).stdout)
             node_output = run('docker', 'logs', exit_name, check=False)
             Path('build/smoke-exit-node.log').write_text(node_output.stdout + node_output.stderr)
-            for log in ('target.log', 'access.log', 'error.log'):
+            for log in ('target.log', 'access.log', 'error.log', 'capture.log'):
                 if (root / log).exists():
                     Path('build/smoke-exit-' + log).write_bytes((root / log).read_bytes())
+            for interface in (LAN_LINK, BRIDGE):
+                result = run('tc', '-s', 'filter', 'show', 'dev', interface, 'ingress', check=False)
+                Path('build/smoke-tc-' + interface + '.log').write_text(result.stdout + result.stderr)
             inside(name, '/etc/init.d/passwall', 'stop', check=False, timeout=90)
             inside(name, 'uci', 'import', 'passwall', data=backup)
             inside(name, 'uci', 'commit', 'passwall')
