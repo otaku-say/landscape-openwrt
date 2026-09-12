@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck shell=ash
 # Keep procd's console opens inside Docker, including its shutdown fallback.
 set -eu
 fail() { printf 'landscape-console: %s\n' "$*" >&2; exit 1; }
