@@ -22,53 +22,56 @@ GitHub Release 的两个本地 PassWall APK 使用 SHA256 校验后离线安装�
 
 ## 全新部署
 
-这是大版本重构，**不迁移、不兼容旧 OpenWrt 配置卷**。新版 Compose 使用全新 `immortalwrt-config`、`immortalwrt-dropbear` 卷；旧卷不被删除，但不会挂载。不要把旧 `/etc/config` 或完整备份恢复到新版。
+这是大版本重构，**不迁移、不兼容旧 OpenWrt 配置卷**。新版 Compose 使用 `landscape-openwrt-config`、`landscape-openwrt-dropbear` 卷；旧卷不被删除，但不会挂载。不要把旧 `/etc/config` 或完整备份恢复到新版。
 
 ```bash
 git clone https://github.com/otaku-say/landscape-openwrt.git
 cd landscape-openwrt
+cp -n .env.example .env
+chmod 600 .env
 ```
 
-先编辑 `docker-compose.yaml`：
+编辑 `.env`。每个变量都有中文说明，Compose 自动读取同目录的 `.env`，无需 `source` 或 `export`：
 
-```yaml
-environment:
-  LAND_ROOT_PASSWORD: "CHANGE_ME_BEFORE_START"
-  TZ: "Asia/Shanghai"
-  LAND_DNS_ADDR: "223.5.5.5"
-  LAND_REDIRECT_LOG_LEVEL: "INFO"
+```dotenv
+LAND_ROOT_PASSWORD='CHANGE_ME_BEFORE_START'
+TZ=Asia/Shanghai
+LAND_DNS_ADDR=223.5.5.5
+LAND_REDIRECT_LOG_LEVEL=INFO
 ```
 
-**必须替换 `LAND_ROOT_PASSWORD`**，不限制密码长度或复杂度，短密码和纯数字均可；不接受空值、占位值或换行。不需要 `.env`；密码含 `$` 时在 Compose 中写成 `$$`。这是运行时变量，不是 Docker build arg，不写入公开镜像或 UCI。Docker 管理员仍可通过容器配置查看环境变量，应限制 Compose 文件与 Docker 管理权限。
+**必须替换 `LAND_ROOT_PASSWORD`**，不限制密码长度或复杂度，短密码和纯数字均可；不接受空值、占位值或换行。在 `.env` 中用单引号包住密码，`$`、`#` 和空格按字面读取，不需要把 `$` 改成 `$$`。这是运行时变量，不是 Docker build arg，不写入公开镜像或 UCI。Docker 管理员仍可通过容器配置查看环境变量，应限制 `.env` 文件与 Docker 管理权限。实际 `.env` 被 Git 和 Docker 构建上下文忽略，公开仓库仅提供 `.env.example`。
 
 用户名为 **root**，LuCI 和 SSH 使用同一个密码。每次启动都按该变量设置 root 密码；修改变量后执行 `docker compose up -d`，容器重建后密码不会退回上游默认值。在 LuCI 中单独修改的密码会在下次启动时被 Compose 值覆盖。
 
 `TZ` 支持 IANA 名称，例如 `Asia/Shanghai`、`Etc/UTC`、`Europe/Berlin`。镜像包含完整时区数据，每次启动同步 LuCI 的系统时区和本地时间，自动处理夏令时；修改后执行 `docker compose up -d`。不会调整宿主机系统时钟、硬件时钟或开启 NTP 校时。
 
-保留你的宿主机管理地址、socket 路径和网段设置。仓库当前 Compose 默认：
+管理地址、端口、socket 路径、网段/网关、容器地址、卷名、镜像、重启策略和日志限制均在 `.env` 修改；权限和网络协议栈等固定运行要求仍在 Compose 中保留。模板默认：
 
 | 用途 | 地址 |
 | --- | --- |
 | LuCI HTTP | `http://10.10.10.1:8000` |
 | LuCI HTTPS | `https://10.10.10.1:8443`，首次生成自签证书 |
 | SSH | `ssh -p 2222 root@10.10.10.1` |
-| 容器 IPv4 | `172.30.80.2/24` |
-| 容器 ULA IPv6 | `fd70:6c61:6e64:80::2/64` |
+| 容器 IPv4 | `172.66.66.2/24` |
+| 容器 ULA IPv6 | `fd70:6c61:6e64:66::2/64` |
 | Landscape socket | `/root/.lkit/landscape/data/unix_link` |
 
-非 lkit 部署通常将 socket 改为 `/root/.landscape-router/unix_link`。保持同一网络与 bridge 名称 `ld-owrt0`，无需重设你已配置好的 Landscape LAN 服务。管理端口有冲突时调整宿主机端口。
+非 lkit 部署通常将 `.env` 的 `LANDSCAPE_SOCKET_DIR` 改为 `/root/.landscape-router/unix_link`。Docker 网络名为 `landscape-openwrt`，网桥名为 `landscape-owrt`，后者必须不超过 Linux 的 15 字符限制。若从旧 `ld-owrt0` 改用新桥，需要在 Landscape 为新桥重新启用 LAN/LANv6/LR；保留旧桥时在 `.env` 填回其名称。管理端口有冲突时调整宿主机端口。
+
+模板保留你指定的 `172.66.66.0/24`，但它不是私网，会覆盖该公网网段的目的路由。新部署建议选择未占用的私网段（例如 `172.30.66.0/24`），同时修改 IPv4 子网、网关和容器地址。
 
 ```bash
 docker compose pull
 docker compose up -d
 ```
 
-沿用旧部署目录时先更新仓库并检查 Compose 差异，替换为新版卷配置；不要执行 `down -v`。这次不会自动恢复旧订阅，请在全新 PassWall 中重新配置。
+沿用旧部署目录时先更新仓库，生成并填写新版 `.env`，检查新版卷名；不要执行 `down -v`。这次不会自动恢复旧订阅，请在全新 PassWall 中重新配置。
 
 ## Landscape 与动态 IPv6
 
 1. 只接一个 Docker bridge 网络，使用 cgroup v2，保留 `ld_flow_edge: "true"` 和只读 socket 挂载；不使用 host/macvlan 网络、额外网卡或 `init: true`。
-2. 在 Landscape 将 `ld-owrt0` 设为 **LAN**，同时开启 **LANv6** 和 **LAN 路由转发（LR）**。
+2. 在 Landscape 将 `.env` 指定的网桥（默认 `landscape-owrt`）设为 **LAN**，同时开启 **LANv6** 和 **LAN 路由转发（LR）**。
 3. LANv6 选纯 RA（SLAAC），从所选 WAN 的上游 PD 分配未占用的 `/64`。不填写固定运营商前缀，M/O 与 DHCPv6 关闭，桥上的 DHCPv4 也关闭。
 4. 容器保留 Docker ULA 和静态默认网关，使用 `accept_ra=2` 接收动态公网地址、`accept_ra_defrtr=0` 保留 Docker 网关。网络重载后 hotplug 自动重设 RA 参数；公网地址不会固化到 UCI。
 5. 配置容器自身流量走正常 WAN，不能再次导向自身，否则形成循环。多 WAN 上游选择和故障切换仍由宿主机策略决定。

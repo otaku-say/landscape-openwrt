@@ -191,7 +191,7 @@ def resolve():
     # Heartbeat-only commits keep GitHub schedules active but do not change image inputs.
     revision = subprocess.check_output([
         "git", "log", "-1", "--format=%H", "--", "Dockerfile", "start.sh", "rootfs",
-        "scripts", "tests", ".github/workflows", "docker-compose.yaml", "README.md",
+        "scripts", "tests", ".github/workflows", "docker-compose.yaml", ".env.example", "README.md",
     ], text=True).strip()
     if not revision:
         raise ValueError("Commit the integration source before resolving inputs")

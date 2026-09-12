@@ -1,11 +1,11 @@
 services:
   openwrt:
-    image: ghcr.io/otaku-say/landscape-openwrt:latest
-    container_name: landscape-openwrt
+    image: ${OPENWRT_IMAGE:?Set OPENWRT_IMAGE in .env}
+    container_name: ${CONTAINER_NAME:?Set CONTAINER_NAME in .env}
     platform: linux/amd64
-    restart: unless-stopped
+    restart: ${RESTART_POLICY:?Set RESTART_POLICY in .env}
     privileged: true
-    # 必须由 OpenWrt 的 /sbin/init 保持 PID 1，不要添加 init: true。
+    # 接应运行条件固定：单网桥、cgroup v2、/sbin/init 为 PID 1，不能加 init: true。
     labels:
       ld_flow_edge: "true"
     cap_add:
@@ -17,15 +17,10 @@ services:
         soft: -1
         hard: -1
     environment:
-      # 必填：设置 root 的 LuCI 和 SSH 登录密码，不限制长度或复杂度。
-      # 每次启动均以此值设置密码；修改后执行 docker compose up -d。
-      # 密码含 $ 时写为 $$，避免 Compose 插值。不需要 .env。
-      LAND_ROOT_PASSWORD: "CHANGE_ME_BEFORE_START"
-      # 使用 IANA 时区名称；只影响容器显示，不修改宿主机时钟。
-      TZ: "Asia/Shanghai"
-      # 仅首次初始化 DNS；之后由 LuCI/PassWall 维护。
-      LAND_DNS_ADDR: "223.5.5.5"
-      LAND_REDIRECT_LOG_LEVEL: "INFO"
+      LAND_ROOT_PASSWORD: ${LAND_ROOT_PASSWORD:?Set LAND_ROOT_PASSWORD in .env}
+      TZ: ${TZ:?Set TZ in .env}
+      LAND_DNS_ADDR: ${LAND_DNS_ADDR:?Set LAND_DNS_ADDR in .env}
+      LAND_REDIRECT_LOG_LEVEL: ${LAND_REDIRECT_LOG_LEVEL:?Set LAND_REDIRECT_LOG_LEVEL in .env}
     sysctls:
       net.ipv4.conf.lo.accept_local: "1"
       net.ipv4.conf.all.rp_filter: "0"
@@ -35,48 +30,47 @@ services:
       net.ipv6.conf.default.disable_ipv6: "0"
       net.ipv6.conf.all.forwarding: "1"
     ports:
-      # 只绑定现有 LAN 地址，避免占用 Landscape 的 80/443。
-      - "10.10.10.1:8000:80"
-      - "10.10.10.1:8443:443"
-      - "10.10.10.1:2222:22"
+      - "${LAN_BIND_IP:?Set LAN_BIND_IP in .env}:${LUCI_HTTP_PORT:?Set LUCI_HTTP_PORT in .env}:80"
+      - "${LAN_BIND_IP:?Set LAN_BIND_IP in .env}:${LUCI_HTTPS_PORT:?Set LUCI_HTTPS_PORT in .env}:443"
+      - "${LAN_BIND_IP:?Set LAN_BIND_IP in .env}:${SSH_PORT:?Set SSH_PORT in .env}:22"
     volumes:
       - type: bind
-        source: /root/.lkit/landscape/data/unix_link
+        source: ${LANDSCAPE_SOCKET_DIR:?Set LANDSCAPE_SOCKET_DIR in .env}
         target: /ld_unix_link
         read_only: true
         bind:
           create_host_path: false
-      # 不持久化整个 /etc 或根目录，否则会遮住新镜像文件。
-      # 大版本重构使用全新卷，不读取或迁移旧 OpenWrt 配置。
+      # 全新配置卷，不挂载旧版 OpenWrt 配置或整个 /etc。
       - landscape-openwrt-config:/etc/config
       - landscape-openwrt-dropbear:/etc/dropbear
     networks:
       edge:
-        ipv4_address: 172.66.66.2
-        ipv6_address: fd70:6c61:6e64:66::2
+        ipv4_address: ${EDGE_IPV4_ADDRESS:?Set EDGE_IPV4_ADDRESS in .env}
+        ipv6_address: ${EDGE_IPV6_ADDRESS:?Set EDGE_IPV6_ADDRESS in .env}
     logging:
       driver: json-file
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: ${LOG_MAX_SIZE:?Set LOG_MAX_SIZE in .env}
+        max-file: ${LOG_MAX_FILES:?Set LOG_MAX_FILES in .env}
 
 networks:
   edge:
-    # 在 Landscape 将 landscape-openwrt 设为 LAN，同时启用 LANv6 和 LAN 路由（LR）。
-    # LANv6 选上游 PD 的空闲 /64、纯 RA；不要填写固定运营商前缀。
-    name: landscape-openwrt
+    # 在 Landscape 对此网桥启用 LAN、LANv6（上游 PD 的纯 RA）和 LAN 路由（LR）。
+    name: ${EDGE_NETWORK_NAME:?Set EDGE_NETWORK_NAME in .env}
     driver: bridge
     enable_ipv6: true
     driver_opts:
-      com.docker.network.bridge.name: landscape-openwrt
+      com.docker.network.bridge.name: ${EDGE_BRIDGE_NAME:?Set EDGE_BRIDGE_NAME in .env}
       com.docker.network.bridge.enable_ip_masquerade: "true"
     ipam:
       config:
-        - subnet: 172.66.66.0/24
-          gateway: 172.66.66.1
-        - subnet: fd70:6c61:6e64:66::/64
-          gateway: fd70:6c61:6e64:66::1
+        - subnet: ${EDGE_IPV4_SUBNET:?Set EDGE_IPV4_SUBNET in .env}
+          gateway: ${EDGE_IPV4_GATEWAY:?Set EDGE_IPV4_GATEWAY in .env}
+        - subnet: ${EDGE_IPV6_SUBNET:?Set EDGE_IPV6_SUBNET in .env}
+          gateway: ${EDGE_IPV6_GATEWAY:?Set EDGE_IPV6_GATEWAY in .env}
 
 volumes:
   landscape-openwrt-config:
+    name: ${CONFIG_VOLUME_NAME:?Set CONFIG_VOLUME_NAME in .env}
   landscape-openwrt-dropbear:
+    name: ${DROPBEAR_VOLUME_NAME:?Set DROPBEAR_VOLUME_NAME in .env}
