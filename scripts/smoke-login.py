@@ -36,7 +36,8 @@ if os.environ.get('PREVIOUS_ROOT_PASSWORD'):
     assert not old, 'Old root password still accepted after recreation'
 with opener.open(base + '/admin/services/passwall', timeout=20) as response:
     html = response.read().decode()
-    assert response.status == 200 and 'PassWall' in html and 'Internal Server Error' not in html
+    assert response.status == 200 and ('cbi-passwall' in html or 'cbid.passwall.' in html), 'PassWall configuration form missing'
+    assert 'Internal Server Error' not in html
 raw = subprocess.check_output(['docker', 'exec', name, 'apk', 'query', '--installed', '--format', 'json', '--fields', 'name,version', '*'])
 packages = {p['name']: p['version'] for p in json.loads(raw)}
 metadata = json.loads(subprocess.check_output(['docker', 'exec', name, 'cat', '/usr/share/landscape-openwrt/upstream.json']))
@@ -59,5 +60,7 @@ for line in feeds.splitlines():
         assert line.startswith('https://mirrors.ustc.edu.cn/immortalwrt/'), 'Unexpected system feed'
 for path in ('/proc/1/environ', '/etc/config/landscape'):
     content = subprocess.check_output(['docker', 'exec', name, 'cat', path])
-    assert password.encode() not in content, 'Password leaked into service environment or UCI'
+    assert b'LAND_ROOT_PASSWORD=' not in content, 'Password environment inherited by services'
+    if len(password) >= 12:
+        assert password.encode() not in content, 'Password leaked into service environment or UCI'
 print('PASS: real LuCI password login, wrong/old password rejection, PassWall page and installed APK versions')

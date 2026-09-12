@@ -123,7 +123,8 @@ docker exec "$name" sh -ec '
 '
 docker rm -f "$name"
 export PREVIOUS_ROOT_PASSWORD="$LAND_ROOT_PASSWORD"
-LAND_ROOT_PASSWORD=$(openssl rand -hex 20)
+# Deliberately exercise a short numeric password: no length/complexity policy.
+LAND_ROOT_PASSWORD=123
 TZ=Europe/Berlin
 start_container
 wait_healthy

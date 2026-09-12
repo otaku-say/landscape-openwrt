@@ -17,7 +17,7 @@ services:
         soft: -1
         hard: -1
     environment:
-      # 必填：改成至少 12 字符的密码，root 用于 LuCI 和 SSH 登录。
+      # 必填：设置 root 的 LuCI 和 SSH 登录密码，不限制长度或复杂度。
       # 每次启动均以此值设置密码；修改后执行 docker compose up -d。
       # 密码含 $ 时写为 $$，避免 Compose 插值。不需要 .env。
       LAND_ROOT_PASSWORD: "CHANGE_ME_BEFORE_START"

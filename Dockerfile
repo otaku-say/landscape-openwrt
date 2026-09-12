@@ -44,7 +44,7 @@ RUN set -eu; \
     /usr/bin/redirect_pkg_handler --help >/dev/null; \
     /etc/init.d/landscape-prepare enable; \
     /etc/init.d/landscape-redirect enable; \
-    for service in sysctl sysntpd sysfixtime fstab gpio_switch led packet_steering sysfsutils autocore automount; do \
+    for service in sysctl sysntpd sysfixtime fstab gpio_switch led packet_steering sysfsutils autocore automount haproxy; do \
       if [ -x "/etc/init.d/$service" ]; then "/etc/init.d/$service" disable; fi; \
     done
 ENV PATH=/usr/sbin:/usr/bin:/sbin:/bin \
