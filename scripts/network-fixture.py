@@ -14,6 +14,8 @@ from dnslib.server import BaseResolver, DNSServer
 from scapy.all import Ether, IPv6, ICMPv6ND_RA, ICMPv6NDOptPrefixInfo, ICMPv6NDOptSrcLLAddr, get_if_hwaddr, sendp
 
 BRIDGE = 'ld-owrt-test'
+CLIENT = 'ld-owrt-lan'
+CLIENT_LINK = 'ld-owrt-lan0'
 TARGET = '2001:db8:ffff::1'
 # Do not use .test (locally blocked by OpenWrt's RFC6761 config) or RFC1918
 # answers (correctly rejected by DNS rebinding protection).
@@ -46,9 +48,47 @@ class Resolver(BaseResolver):
         return reply
 
 
+def setup_client():
+    # A veth namespace is an external routed LAN, not another Docker bridge.
+    # Install no accept/NAT rules: Docker must permit the unpublished ports itself.
+    command('ip', 'netns', 'add', CLIENT)
+    command('ip', 'link', 'add', CLIENT_LINK, 'type', 'veth', 'peer', 'name', 'eth0', 'netns', CLIENT)
+    command('ip', 'addr', 'add', '10.77.0.1/24', 'dev', CLIENT_LINK)
+    command('ip', '-6', 'addr', 'add', 'fd70:6c61:6e64:77::1/64', 'dev', CLIENT_LINK, 'nodad')
+    command('ip', 'link', 'set', CLIENT_LINK, 'up')
+    for args in [('link', 'set', 'lo', 'up'), ('link', 'set', 'eth0', 'up'),
+                 ('addr', 'add', '10.77.0.2/24', 'dev', 'eth0'),
+                 ('addr', 'add', '192.0.2.2/32', 'dev', 'lo'),
+                 ('-6', 'addr', 'add', 'fd70:6c61:6e64:77::2/64', 'dev', 'eth0', 'nodad'),
+                 ('route', 'add', 'default', 'via', '10.77.0.1'),
+                 ('-6', 'route', 'add', 'default', 'via', 'fd70:6c61:6e64:77::1')]:
+        command('ip', '-n', CLIENT, *args)
+    command('ip', 'route', 'add', '192.0.2.2/32', 'via', '10.77.0.2', 'dev', CLIENT_LINK)
+
+
+def cleanup_client():
+    subprocess.run(['ip', 'netns', 'del', CLIENT], capture_output=True, timeout=10)
+    subprocess.run(['ip', 'link', 'del', CLIENT_LINK], capture_output=True, timeout=10)
+
+
+def management(name):
+    ports = [inside(name, 'uci', 'get', f'landscape.container.{key}_port') for key in ('http', 'https', 'ssh')]
+    result = command('ip', 'netns', 'exec', CLIENT, sys.executable, 'scripts/test-management.py',
+                     '172.30.80.2,fd70:6c61:6e64:80::2', *ports, timeout=90)
+    print(result, flush=True)
+    print('PASS: routed IPv4/ULA management without host publishing, custom accept rules or Landscape LR', flush=True)
+    for port in ports + ['53']:
+        result = subprocess.run(['ip', 'netns', 'exec', CLIENT, 'curl', '--noproxy', '*',
+                                 '--interface', '192.0.2.2', '--max-time', '2',
+                                 f'telnet://172.30.80.2:{port}'], capture_output=True, timeout=5)
+        assert result.returncode == 7, f'Non-private IPv4 source was not rejected on port {port}: {result.returncode}'
+    print('PASS: non-private IPv4 management and DNS rejected', flush=True)
+
+
 def serve(root):
     (root / 'network.pid').write_text(str(os.getpid()))
     (root / 'prefix-stage').write_text('1')
+    setup_client()
     for addr in ['fe80::1/64', '2001:db8:80:1::1/64', '2001:db8:80:2::1/64', TARGET + '/128']:
         command('ip', '-6', 'addr', 'add', addr, 'dev', BRIDGE, 'nodad')
     for tcp in (False, True):
@@ -98,16 +138,23 @@ def verify(name, root):
     return address
 
 
+def public_management(name, address):
+    for key in ('http', 'https', 'ssh'):
+        port = inside(name, 'uci', 'get', f'landscape.container.{key}_port')
+        blocked = subprocess.run(['curl', '--noproxy', '*', '-g', '--max-time', '2',
+                                  f'telnet://[{address}]:{port}'], capture_output=True, timeout=5)
+        assert blocked.returncode == 7, f'Public IPv6 management port {port} is not rejected'
+    print('PASS: public IPv6 management rejected at all configured ports', flush=True)
+
+
 def check(name, root):
     lookup = inside(name, 'nslookup', DNS_NAME, '127.0.0.1')
     assert DNS_A in lookup and DNS_AAAA in lookup, lookup
     print('PASS: local dnsmasq resolves A and AAAA through the configured upstream', flush=True)
     address = verify(name, root)
     command('ping', '-6', '-c', '1', '-W', '3', address)
-    blocked = subprocess.run(['curl', '--noproxy', '*', '-gfsS', '--max-time', '3',
-                              f'http://[{address}]/'], capture_output=True, timeout=5)
-    assert blocked.returncode != 0, 'Public IPv6 management is exposed'
-    print('PASS: public IPv6 responds to ICMP but rejects the management HTTP port', flush=True)
+    public_management(name, address)
+    management(name)
     inside(name, 'sysctl', '-qw', 'net.ipv6.conf.eth0.accept_ra=0', 'net.ipv6.conf.eth0.autoconf=0')
     inside(name, '/etc/init.d/network', 'restart')
     verify(name, root)
@@ -128,9 +175,13 @@ if __name__ == '__main__':
                 os.kill(int(pid_file.read_text()), signal.SIGTERM)
             except ProcessLookupError:
                 pass
+        cleanup_client()
+    elif mode == 'management':
+        management(sys.argv[2])
     elif mode == 'check':
         check(sys.argv[2], Path(sys.argv[3]))
     elif mode == 'verify':
-        verify(sys.argv[2], Path(sys.argv[3]))
+        address = verify(sys.argv[2], Path(sys.argv[3]))
+        public_management(sys.argv[2], address)
     else:
         raise ValueError(mode)

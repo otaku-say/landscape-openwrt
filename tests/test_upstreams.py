@@ -33,7 +33,7 @@ class InputsTest(unittest.TestCase):
     def test_resolve_time_does_not_trigger_rebuild(self):
         self.assertEqual(u.inputs_digest(dict(self.state, resolved_at='tomorrow')), self.state['inputs_digest'])
 
-    def test_legacy_labels_trigger_new_generation(self):
+    def test_missing_input_digest_triggers_build(self):
         self.assertFalse(u.same_inputs({'org.opencontainers.image.revision': '2'*40}, self.state))
 
     def test_numeric_stable_tag_selection(self):

@@ -1,0 +1,34 @@
+#!/bin/sh
+set -eu
+fail() { printf 'landscape-management: %s\n' "$*" >&2; exit 1; }
+http=${LUCI_HTTP_PORT-8000}
+https=${LUCI_HTTPS_PORT-8443}
+ssh=${SSH_PORT-2222}
+for port in "$http" "$https" "$ssh"; do
+    case "$port" in ''|*[!0-9]*|0*|??????*) fail 'Ports must be decimal integers from 1 to 65535 without leading zeros.' ;; esac
+    [ "$port" -le 65535 ] || fail 'Port exceeds 65535.'
+    [ "$port" != 53 ] || fail 'Port 53 is reserved for DNS.'
+done
+[ "$http" != "$https" ] && [ "$http" != "$ssh" ] && [ "$https" != "$ssh" ] \
+    || fail 'HTTP, HTTPS and SSH ports must be distinct.'
+case "${1-}" in --check) exit 0 ;; '') ;; *) fail 'Unknown argument.' ;; esac
+
+# Start from this image's service defaults; do not import previous service configs.
+cp /usr/share/landscape-openwrt/config/uhttpd /etc/config/uhttpd
+cp /usr/share/landscape-openwrt/config/dropbear /etc/config/dropbear
+uci add_list "uhttpd.main.listen_http=0.0.0.0:$http"
+uci add_list "uhttpd.main.listen_http=[::]:$http"
+uci add_list "uhttpd.main.listen_https=0.0.0.0:$https"
+uci add_list "uhttpd.main.listen_https=[::]:$https"
+uci set uhttpd.main.redirect_https=0
+uci set "dropbear.@dropbear[0].Port=$ssh"
+uci set 'dropbear.@dropbear[0].PasswordAuth=on'
+uci set 'dropbear.@dropbear[0].RootPasswordAuth=on'
+uci set 'dropbear.@dropbear[0].RootLogin=1'
+uci set 'dropbear.@dropbear[0].mdns=0'
+uci commit uhttpd
+uci commit dropbear
+uci set "landscape.container.http_port=$http"
+uci set "landscape.container.https_port=$https"
+uci set "landscape.container.ssh_port=$ssh"
+uci commit landscape

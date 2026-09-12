@@ -21,6 +21,9 @@ services:
       TZ: ${TZ:?Set TZ in .env}
       LAND_DNS_ADDR: ${LAND_DNS_ADDR:?Set LAND_DNS_ADDR in .env}
       LAND_REDIRECT_LOG_LEVEL: ${LAND_REDIRECT_LOG_LEVEL:?Set LAND_REDIRECT_LOG_LEVEL in .env}
+      LUCI_HTTP_PORT: ${LUCI_HTTP_PORT:?Set LUCI_HTTP_PORT in .env}
+      LUCI_HTTPS_PORT: ${LUCI_HTTPS_PORT:?Set LUCI_HTTPS_PORT in .env}
+      SSH_PORT: ${SSH_PORT:?Set SSH_PORT in .env}
     sysctls:
       net.ipv4.conf.lo.accept_local: "1"
       net.ipv4.conf.all.rp_filter: "0"
@@ -29,10 +32,7 @@ services:
       net.ipv6.conf.all.disable_ipv6: "0"
       net.ipv6.conf.default.disable_ipv6: "0"
       net.ipv6.conf.all.forwarding: "1"
-    ports:
-      - "${LAN_BIND_IP:?Set LAN_BIND_IP in .env}:${LUCI_HTTP_PORT:?Set LUCI_HTTP_PORT in .env}:80"
-      - "${LAN_BIND_IP:?Set LAN_BIND_IP in .env}:${LUCI_HTTPS_PORT:?Set LUCI_HTTPS_PORT in .env}:443"
-      - "${LAN_BIND_IP:?Set LAN_BIND_IP in .env}:${SSH_PORT:?Set SSH_PORT in .env}:22"
+    # 直接访问容器 IP 与原生监听端口，不发布宿主机端口。
     volumes:
       - type: bind
         source: ${LANDSCAPE_SOCKET_DIR:?Set LANDSCAPE_SOCKET_DIR in .env}
@@ -40,7 +40,7 @@ services:
         read_only: true
         bind:
           create_host_path: false
-      # 全新配置卷，不挂载旧版 OpenWrt 配置或整个 /etc。
+      # 只持久化应用配置和 SSH 身份；使用未被旧部署占用的新卷。
       - landscape-openwrt-config:/etc/config
       - landscape-openwrt-dropbear:/etc/dropbear
     networks:
@@ -62,6 +62,10 @@ networks:
     driver_opts:
       com.docker.network.bridge.name: ${EDGE_BRIDGE_NAME:?Set EDGE_BRIDGE_NAME in .env}
       com.docker.network.bridge.enable_ip_masquerade: "true"
+      # Docker Engine 28+；允许普通内核路由直连，不依赖 Landscape LR。
+      # 不使用 Docker 的发布端口过滤；管理/DNS 访问由容器 firewall4 限制。
+      com.docker.network.bridge.gateway_mode_ipv4: nat-unprotected
+      com.docker.network.bridge.gateway_mode_ipv6: nat-unprotected
     ipam:
       config:
         - subnet: ${EDGE_IPV4_SUBNET:?Set EDGE_IPV4_SUBNET in .env}

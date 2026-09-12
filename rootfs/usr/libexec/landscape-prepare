@@ -28,6 +28,26 @@ set_zone() {
 }
 config_load firewall
 config_foreach set_zone zone
+# Direct routing has no Docker published-port filter. Restrict management and DNS
+# here, without restricting forwarded proxy traffic or its transparent listeners.
+ports="$(uci get landscape.container.http_port) $(uci get landscape.container.https_port) $(uci get landscape.container.ssh_port) 53"
+uci set firewall.landscape_private4=rule
+uci set firewall.landscape_private4.name='Allow private IPv4 management'
+uci set firewall.landscape_private4.src=lan
+uci set firewall.landscape_private4.family=ipv4
+uci set firewall.landscape_private4.proto='tcp udp'
+uci set firewall.landscape_private4.src_ip='10.0.0.0/8 172.16.0.0/12 192.168.0.0/16'
+uci set "firewall.landscape_private4.dest_port=$ports"
+uci set firewall.landscape_private4.target=ACCEPT
+uci set firewall.landscape_private4.enabled=1
+uci set firewall.landscape_public4=rule
+uci set firewall.landscape_public4.name='Block non-private IPv4 management'
+uci set firewall.landscape_public4.src=lan
+uci set firewall.landscape_public4.family=ipv4
+uci set firewall.landscape_public4.proto='tcp udp'
+uci set "firewall.landscape_public4.dest_port=$ports"
+uci set firewall.landscape_public4.target=REJECT
+uci set firewall.landscape_public4.enabled=1
 # A public SLAAC address must not expose management or an open DNS resolver.
 uci set firewall.landscape_mgmt6=rule
 uci set firewall.landscape_mgmt6.name='Block public IPv6 management'
@@ -35,7 +55,7 @@ uci set firewall.landscape_mgmt6.src=lan
 uci set firewall.landscape_mgmt6.family=ipv6
 uci set firewall.landscape_mgmt6.proto='tcp udp'
 uci set firewall.landscape_mgmt6.dest_ip='2000::/3'
-uci set firewall.landscape_mgmt6.dest_port='22 53 80 443'
+uci set "firewall.landscape_mgmt6.dest_port=$ports"
 uci set firewall.landscape_mgmt6.target=REJECT
 uci set firewall.landscape_mgmt6.enabled=1
 uci set 'firewall.@defaults[0].flow_offloading=0'

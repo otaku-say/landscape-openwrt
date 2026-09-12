@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-# New generation only: initialize once, then leave LuCI/PassWall DNS untouched.
+# Initialize once, then leave LuCI/PassWall DNS untouched.
 [ "$(uci -q get landscape.container.initialized || true)" != 1 ] || exit 0
 uci set 'dhcp.@dnsmasq[0].noresolv=1'
 uci set 'dhcp.@dnsmasq[0].localservice=0'

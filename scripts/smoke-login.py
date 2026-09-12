@@ -9,14 +9,16 @@ import urllib.parse
 import urllib.error
 import urllib.request
 
+import paramiko
+
 name = sys.argv[1]
 password = os.environ['LAND_ROOT_PASSWORD']
-base = 'http://172.30.80.2/cgi-bin/luci'
+base = f'http://172.30.80.2:{os.environ["LUCI_HTTP_PORT"]}/cgi-bin/luci'
 
 
 def login(value):
     cookies = http.cookiejar.CookieJar()
-    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookies))
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPCookieProcessor(cookies))
     data = urllib.parse.urlencode({'luci_username': 'root', 'luci_password': value}).encode()
     try:
         with opener.open(base + '/', data=data, timeout=15) as response:
@@ -27,6 +29,29 @@ def login(value):
     return opener, any(c.name.startswith('sysauth') and c.value for c in cookies)
 
 
+def ssh_login(value, host='172.30.80.2'):
+    client = paramiko.SSHClient()
+    # An isolated CI container generates its own ephemeral host key.
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    try:
+        client.connect(host, port=int(os.environ['SSH_PORT']), username='root', password=value,
+                       look_for_keys=False, allow_agent=False, timeout=10, auth_timeout=10,
+                       banner_timeout=10)
+        _, stdout, _ = client.exec_command('id -u', timeout=10)
+        assert stdout.read().strip() == b'0'
+        return True
+    except paramiko.AuthenticationException:
+        return False
+    finally:
+        client.close()
+
+
+assert ssh_login(password), 'Configured root password was not accepted by SSH'
+assert ssh_login(password, 'fd70:6c61:6e64:80::2'), 'ULA SSH login failed'
+assert not ssh_login(password + '-incorrect'), 'SSH accepted an incorrect password'
+if os.environ.get('PREVIOUS_ROOT_PASSWORD'):
+    assert not ssh_login(os.environ['PREVIOUS_ROOT_PASSWORD']), 'SSH accepted the old password'
+print('PASS: IPv4/ULA SSH root login and wrong/old password rejection at the native port')
 opener, accepted = login(password)
 assert accepted, 'Configured root password was not accepted by LuCI'
 _, wrong = login(password + '-incorrect')

@@ -67,6 +67,14 @@ rm -f /etc/uci-defaults/50-root-passwd
 sed -i '/hwclock -u --systz/d' /etc/init.d/system
 sed -i 's|https://mirrors.vsean.net/openwrt|https://mirrors.ustc.edu.cn/immortalwrt|g' \
     /etc/uci-defaults/99-default-settings-chinese
+# Keep upstream service defaults without fixed listeners. Runtime owns both files.
+uci -q delete uhttpd.main.listen_http || true
+uci -q delete uhttpd.main.listen_https || true
+uci -q delete 'dropbear.@dropbear[0].Port' || true
+uci commit uhttpd
+uci commit dropbear
+mkdir -p /usr/share/landscape-openwrt/config
+cp /etc/config/uhttpd /etc/config/dropbear /usr/share/landscape-openwrt/config/
 cp /tmp/passwall-packages.txt /usr/share/landscape-openwrt/passwall-packages.txt
 rm -rf /tmp/packages /tmp/install-packages.sh /tmp/passwall-metadata.json \
     /tmp/passwall-packages.txt /tmp/passwall-feed.adb /tmp/passwall-feed.json /tmp/apk-cache /var/cache/apk

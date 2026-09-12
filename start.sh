@@ -32,6 +32,7 @@ export TZ="$tz"
 dns=${LAND_DNS_ADDR:-223.5.5.5}
 case "$dns" in ''|*[!0-9a-fA-F:.]*) fail 'LAND_DNS_ADDR must be an IP address.' ;; esac
 
+/usr/libexec/landscape-management --check
 /usr/libexec/landscape-password
 unset LAND_ROOT_PASSWORD
 
@@ -70,9 +71,9 @@ uci commit network
 [ -f /etc/config/landscape ] || touch /etc/config/landscape
 uci set landscape.container=container
 uci set "landscape.container.timezone=$tz"
-uci set landscape.container.generation=2
 uci set landscape.container.log_level="$log_level"
 uci set landscape.container.dns="$dns"
 uci commit landscape
+/usr/libexec/landscape-management
 
 exec /sbin/init

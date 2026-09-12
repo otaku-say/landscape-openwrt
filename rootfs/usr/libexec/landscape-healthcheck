@@ -8,6 +8,14 @@ ip -4 route show default dev eth0 | grep -q '^default via '
 ip -6 route show default dev eth0 | grep -q '^default via '
 nft list chain inet fw4 srcnat_lan | grep -q masquerade
 pidof uhttpd >/dev/null
+pidof dropbear >/dev/null
 pidof dnsmasq >/dev/null
+http=$(uci get landscape.container.http_port)
+https=$(uci get landscape.container.https_port)
+ssh=$(uci get landscape.container.ssh_port)
+curl --noproxy '*' -fsS --max-time 2 "http://127.0.0.1:$http/" >/dev/null
+# A generated local certificate is self-signed; this probes service readiness only.
+curl --noproxy '*' -kfsS --max-time 2 "https://127.0.0.1:$https/" >/dev/null
+netstat -lnt | awk -v port=":$ssh" '$6 == "LISTEN" && substr($4, length($4)-length(port)+1) == port { found=1 } END { exit !found }'
 [ "$(sysctl -n net.ipv6.conf.eth0.accept_ra)" = 2 ]
 [ "$(sysctl -n net.ipv6.conf.eth0.autoconf)" = 1 ]

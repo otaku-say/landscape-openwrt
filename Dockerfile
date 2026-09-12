@@ -51,8 +51,10 @@ RUN set -eu; \
 ENV PATH=/usr/sbin:/usr/bin:/sbin:/bin \
     TZ=Asia/Shanghai \
     LAND_DNS_ADDR=223.5.5.5 \
-    LAND_REDIRECT_LOG_LEVEL=INFO
-EXPOSE 22 80 443
+    LAND_REDIRECT_LOG_LEVEL=INFO \
+    LUCI_HTTP_PORT=8000 \
+    LUCI_HTTPS_PORT=8443 \
+    SSH_PORT=2222
 STOPSIGNAL SIGTERM
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
   CMD /usr/libexec/landscape-healthcheck

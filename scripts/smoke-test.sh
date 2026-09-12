@@ -4,13 +4,17 @@ image=${1:-landscape-openwrt:test}
 name=landscape-openwrt-smoke
 network=landscape-openwrt-smoke
 volume=landscape-openwrt-smoke-config
+keys=landscape-openwrt-smoke-keys
 socket_dir=$(mktemp -d)
 server_pid=
 fixture_pid=
 mkdir -p build
 python=build/test-venv/bin/python
 # Generated per CI run; never trace or print this environment.
-export LAND_ROOT_PASSWORD TZ
+export LAND_ROOT_PASSWORD TZ LUCI_HTTP_PORT LUCI_HTTPS_PORT SSH_PORT
+LUCI_HTTP_PORT=8000
+LUCI_HTTPS_PORT=8443
+SSH_PORT=2222
 TZ=Asia/Shanghai
 LAND_ROOT_PASSWORD=$(openssl rand -hex 20)
 cleanup() {
@@ -27,7 +31,7 @@ cleanup() {
     fi
     docker rm -f "${name}-client" "$name" >/dev/null 2>&1 || true
     docker network rm "$network" >/dev/null 2>&1 || true
-    docker volume rm "$volume" >/dev/null 2>&1 || true
+    docker volume rm "$volume" "$keys" >/dev/null 2>&1 || true
     if [[ -n "$server_pid" ]]; then kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true; fi
     rm -rf "$socket_dir"
 }
@@ -35,6 +39,8 @@ trap cleanup EXIT
 
 docker network create --driver bridge --ipv6 \
     --opt com.docker.network.bridge.name=ld-owrt-test \
+    --opt com.docker.network.bridge.gateway_mode_ipv4=nat-unprotected \
+    --opt com.docker.network.bridge.gateway_mode_ipv6=nat-unprotected \
     --subnet 172.30.80.0/24 --gateway 172.30.80.1 \
     --subnet fd70:6c61:6e64:80::/64 --gateway fd70:6c61:6e64:80::1 "$network"
 python3 scripts/test-server.py "$socket_dir" > build/smoke-server.log 2>&1 &
@@ -53,10 +59,11 @@ start_container() {
         --ip 172.30.80.2 --ip6 fd70:6c61:6e64:80::2 \
         --label ld_flow_edge=true --ulimit memlock=-1:-1 \
         -e LAND_DNS_ADDR=172.30.80.1 -e LAND_ROOT_PASSWORD -e TZ \
+        -e LUCI_HTTP_PORT -e LUCI_HTTPS_PORT -e SSH_PORT \
         --sysctl net.ipv4.conf.lo.accept_local=1 \
         --sysctl net.ipv6.conf.all.disable_ipv6=0 \
         --sysctl net.ipv6.conf.default.disable_ipv6=0 \
-        -v "$socket_dir:/ld_unix_link:ro" -v "$volume:/etc/config" "$image"
+        -v "$socket_dir:/ld_unix_link:ro" -v "$volume:/etc/config" -v "$keys:/etc/dropbear" "$image"
 }
 wait_healthy() {
     local deadline=$((SECONDS + 180))
@@ -70,8 +77,9 @@ wait_healthy() {
 }
 start_container
 wait_healthy
-curl -fsS --max-time 10 http://172.30.80.2/ >/dev/null
-curl -gfsS --noproxy '*' --max-time 10 'http://[fd70:6c61:6e64:80::2]/' >/dev/null
+[[ -z $(docker port "$name") ]]
+"$python" scripts/test-management.py '172.30.80.2,fd70:6c61:6e64:80::2' "$LUCI_HTTP_PORT" "$LUCI_HTTPS_PORT" "$SSH_PORT"
+key_before=$(docker exec "$name" sha256sum /etc/dropbear/dropbear_ed25519_host_key)
 for _ in {1..40}; do [[ ! -s "$socket_dir/enrollment.json" ]] || break; sleep 2; done
 id=$(docker inspect -f '{{.Id}}' "$name")
 python3 -c 'import json,sys; v=json.load(open(sys.argv[1])); assert sys.argv[2].startswith(v["id"]); assert v["ifindex"]>0' "$socket_dir/enrollment.json" "$id"
@@ -95,7 +103,7 @@ timeout 45 docker run --rm --name "${name}-client" --privileged --no-healthcheck
       wget -T 10 -qO- "http://[fd70:6c61:6e64:80::1]:18081/" | grep -Fx "fd70:6c61:6e64:80::2"
     '
 
-python3 scripts/smoke-login.py "$name"
+"$python" scripts/smoke-login.py "$name"
 sudo "$python" scripts/network-fixture.py check "$name" "$socket_dir"
 # OpenWrt mounts /tmp itself; docker cp may address the underlying mount instead.
 docker exec -i "$name" sh -s < scripts/smoke-dns.sh
@@ -126,10 +134,16 @@ export PREVIOUS_ROOT_PASSWORD="$LAND_ROOT_PASSWORD"
 # Deliberately exercise a short numeric password: no length/complexity policy.
 LAND_ROOT_PASSWORD=123
 TZ=Europe/Berlin
+LUCI_HTTP_PORT=18000
+LUCI_HTTPS_PORT=18443
+SSH_PORT=12222
 start_container
 wait_healthy
 [[ $(docker exec "$name" uci get landscape.test.value) == retained ]]
-python3 scripts/smoke-login.py "$name"
+[[ $(docker exec "$name" sha256sum /etc/dropbear/dropbear_ed25519_host_key) == "$key_before" ]]
+"$python" scripts/test-management.py '172.30.80.2,fd70:6c61:6e64:80::2' "$LUCI_HTTP_PORT" "$LUCI_HTTPS_PORT" "$SSH_PORT"
+"$python" scripts/smoke-login.py "$name"
+sudo "$python" scripts/network-fixture.py management "$name"
 sudo "$python" scripts/network-fixture.py verify "$name" "$socket_dir"
 docker exec "$name" sh -ec '
   test "$(uci get passwall.landscape_smoke.remarks)" = retained
@@ -137,4 +151,4 @@ docker exec "$name" sh -ec '
   uci delete passwall.landscape_smoke
   uci commit
 '
-echo 'PASS: ImmortalWrt, full PassWall cores, LuCI password rotation, dual-stack enrollment/NAT/DNS/SLAAC and recreation.'
+echo 'PASS: native/routed management without LR or host publishing, port/password rotation, persistent SSH identity, full PassWall cores and dual-stack enrollment/NAT/DNS/SLAAC.'

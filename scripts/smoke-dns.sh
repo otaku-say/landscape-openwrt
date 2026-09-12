@@ -1,5 +1,5 @@
 #!/bin/sh
-# New-generation persistence only; no legacy migration compatibility.
+# Explicit DNS settings must survive subsequent initialization calls.
 set -eu
 cp -p /etc/config/dhcp /tmp/smoke-dhcp
 restore() { cp -p /tmp/smoke-dhcp /etc/config/dhcp; }

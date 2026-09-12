@@ -108,7 +108,7 @@ jobs:
             echo '## Published tested image'
             echo "\`$IMAGE:latest\`"
             echo "ImmortalWrt: $version; PassWall: $PASSWALL; redirect_pkg_handler: $HANDLER"
-            echo 'Tests cover boot, LuCI login/password rotation, PassWall/Xray, DNS, NAT44/66, SLAAC renewal and fresh-generation persistence.'
+            echo 'Tests cover routed IPv4/ULA management without LR or host publishing, HTTP/HTTPS/SSH port rotation, real password login, access restrictions, SSH identity, full PassWall cores, DNS, NAT44/66 and SLAAC renewal.'
             echo 'A real Landscape Flow and an external proxy subscription still require deployment acceptance.'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Unchanged inputs
