@@ -52,6 +52,11 @@ class ProxyCheckTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(args, '')
 
+    def test_official_passwall_source_is_not_patched(self):
+        self.assertFalse((ROOT / 'scripts/passwall-capabilities.patch').exists())
+        self.assertNotIn('passwall-capabilities.patch', (ROOT / 'scripts/install-packages.sh').read_text())
+        self.assertNotIn('passwall-capabilities.patch', (ROOT / 'Dockerfile').read_text())
+
     def test_no_host_nat_compatibility_service(self):
         self.assertFalse((ROOT / 'scripts/host-network.py').exists())
         self.assertFalse((ROOT / 'scripts/test-mixed-routing.py').exists())

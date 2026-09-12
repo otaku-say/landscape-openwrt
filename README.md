@@ -104,15 +104,25 @@ Docker 不能在已有网络上原地更改 gateway mode。全新部署需创建
 
 ### 透明代理能力检查
 
-PassWall 上游用 `lsmod` 中的模块名称判定透明代理可用性；宿主模块尚未加载或能力编译进内核时，这种检查会误报“缺少组件”。本镜像仅适配 LuCI 和状态接口的能力判定，不修改代理核心、分流规则或伪造模块列表：
+**PassWall 官方 APK 安装后保持原样，不打源码补丁、不绕过上游检查、不伪造模块列表。** 官方页面用 `lsmod` 中的模块名称判断可用性；安装在容器中的 OpenWrt kmod 无法替代宿主机实际运行的内核模块。宿主机模块尚未加载时，先在宿主机执行：
+
+```bash
+sudo modprobe -a nft_redir nft_tproxy nft_socket
+```
+
+然后刷新 PassWall 页面。需要宿主机开机预载时，可将这三个模块名各占一行加入其 `/etc/modules-load.d/landscape-openwrt.conf`，保留已有内容。若加载失败，应检查宿主机的匹配内核模块包，而不是修改 PassWall。
+
+镜像另提供独立、非侵入式的能力诊断：
 
 ```bash
 docker exec landscape-openwrt /usr/libexec/landscape-proxy-check
 ```
 
-该命令检查 dnsmasq nftset、策略路由，并通过 `nft --check` 实际验证 IPv4/IPv6 REDIRECT、TCP/UDP TPROXY 和透明 socket 表达式，不安装测试规则。宿主机可按内核机制自动加载匹配模块；内置能力无需出现在 `lsmod`。启动时提前检查，健康检查与 PassWall 页面使用同一判定。
+该命令检查 dnsmasq nftset、策略路由，并通过 `nft --check` 实际验证 IPv4/IPv6 REDIRECT、TCP/UDP TPROXY 和透明 socket 表达式，不安装测试规则。内核可按自身机制加载宿主机的匹配模块。启动与健康检查使用该诊断，PassWall 页面保留上游的判定方式，不注入任何替代代码。
 
-若检查失败，LuCI 仍可用于诊断，但透明代理不会被标记为可用。查看 `/tmp/landscape-proxy-check.log`，由宿主机安装/加载与其内核版本匹配的 `nft_redir`、`nft_tproxy`、`nft_socket` 等模块；不能通过给容器安装另一版本的 OpenWrt kmod 修复宿主内核缺失。
+对于把相关能力编译进内核的其他宿主机，诊断可能通过但官方 `lsmod` 检查仍不通过；这是上游检测限制，本项目不会通过伪造结果隐藏它。
+
+若检查失败，LuCI 仍可用于诊断，但容器健康检查不会通过。查看 `/tmp/landscape-proxy-check.log`，由宿主机安装/加载与其内核版本匹配的 `nft_redir`、`nft_tproxy`、`nft_socket` 等模块；不能通过给容器安装另一版本的 OpenWrt kmod 修复宿主内核缺失。
 
 ## 配置与组件
 

@@ -40,8 +40,8 @@ def uci(name, values):
     inside(name, 'uci', 'commit', 'passwall')
 
 
-def topology():
-    run('ip', 'netns', 'add', WAN)
+def topology(pid):
+    run('ip', 'netns', 'attach', WAN, pid)
     run('ip', 'link', 'add', WAN_LINK, 'type', 'veth', 'peer', 'name', 'eth0', 'netns', WAN)
     run('ip', 'addr', 'add', '203.0.113.1/24', 'dev', WAN_LINK)
     run('ip', '-6', 'addr', 'add', 'fd70:6c61:6e64:90::1/64', 'dev', WAN_LINK, 'nodad')
@@ -99,16 +99,11 @@ def requests(prefix, label):
 def main():
     name = sys.argv[1]
     processes = []
+    exit_name = name + '-exit'
     backup = inside(name, 'uci', 'export', 'passwall') + '\n'
     with tempfile.TemporaryDirectory(prefix='landscape-exit-') as directory:
         root = Path(directory)
         try:
-            topology()
-            target_log = (root / 'target.log').open('w')
-            processes.append(subprocess.Popen(['ip', 'netns', 'exec', WAN, sys.executable,
-                                              'scripts/exit-target.py', 'serve'], stdout=target_log, stderr=subprocess.STDOUT))
-            run('docker', 'cp', name + ':/usr/bin/xray', str(root / 'xray'))
-            (root / 'xray').chmod(0o755)
             identity = str(uuid.uuid4())
             config = {'log': {'access': str(root / 'access.log'), 'error': str(root / 'error.log'), 'loglevel': 'warning'},
                       'inbounds': [{'listen': '::', 'port': 10443, 'protocol': 'vless',
@@ -116,13 +111,22 @@ def main():
                                     'streamSettings': {'network': 'raw', 'security': 'none'}}],
                       'outbounds': [{'protocol': 'freedom'}]}
             (root / 'node.json').write_text(json.dumps(config))
-            node_log = (root / 'node.log').open('w')
-            processes.append(subprocess.Popen(['ip', 'netns', 'exec', WAN, str(root / 'xray'), 'run',
-                                              '-c', str(root / 'node.json')], stdout=node_log, stderr=subprocess.STDOUT))
+            # Run the shipped musl-linked core inside its own image, not the host libc.
+            image = run('docker', 'inspect', '--format', '{{.Image}}', name)
+            run('docker', 'run', '--detach', '--name', exit_name, '--network', 'none', '--no-healthcheck',
+                '--sysctl', 'net.ipv6.conf.all.disable_ipv6=0', '--sysctl', 'net.ipv6.conf.default.disable_ipv6=0',
+                '--mount', f'type=bind,src={directory},dst={directory}', '--entrypoint', '/usr/bin/xray',
+                image, 'run', '-c', str(root / 'node.json'))
+            pid = run('docker', 'inspect', '--format', '{{.State.Pid}}', exit_name)
+            assert pid != '0', run('docker', 'logs', exit_name)
+            topology(pid)
+            target_log = (root / 'target.log').open('w')
+            processes.append(subprocess.Popen(['ip', 'netns', 'exec', WAN, sys.executable,
+                                              'scripts/exit-target.py', 'serve'], stdout=target_log, stderr=subprocess.STDOUT))
             time.sleep(2)
             for process in processes:
                 assert process.poll() is None, 'Isolated WAN process failed to start'
-            # Both are outside the LAN exemption: Docker outbound NAT must remain intact.
+            # A separate WAN interface verifies Docker outbound NAT remains intact.
             peer4 = inside(name, 'curl', '--noproxy', '*', '-fsS', '--max-time', '5', 'http://203.0.113.2:18081/')
             peer6 = inside(name, 'curl', '--noproxy', '*', '--interface', 'fd70:6c61:6e64:80::2',
                            '-gfsS', '--max-time', '5', 'http://[fd70:6c61:6e64:90::2]:18081/')
@@ -163,7 +167,9 @@ def main():
         finally:
             Path('build/smoke-passwall.log').write_text(inside(name, 'sh', '-c', 'cat /tmp/log/passwall.log 2>/dev/null || true', check=False).stdout)
             Path('build/smoke-passwall-nft.log').write_text(inside(name, 'nft', 'list', 'ruleset', check=False).stdout)
-            for log in ('target.log', 'access.log', 'error.log', 'node.log'):
+            node_output = run('docker', 'logs', exit_name, check=False)
+            Path('build/smoke-exit-node.log').write_text(node_output.stdout + node_output.stderr)
+            for log in ('target.log', 'access.log', 'error.log'):
                 if (root / log).exists():
                     Path('build/smoke-exit-' + log).write_bytes((root / log).read_bytes())
             inside(name, '/etc/init.d/passwall', 'stop', check=False, timeout=90)
@@ -179,6 +185,7 @@ def main():
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait()
+            run('docker', 'rm', '-f', exit_name, check=False)
             run('ip', 'netns', 'del', WAN, check=False)
             run('ip', 'link', 'del', WAN_LINK, check=False)
 

@@ -4,7 +4,7 @@ ADD build/rootfs.tar.gz /
 ENV PATH=/usr/sbin:/usr/bin:/sbin:/bin
 COPY build/passwall.apk build/passwall-zh.apk /tmp/packages/
 COPY build/install-inputs.json /usr/share/landscape-openwrt/install-inputs.json
-COPY scripts/install-packages.sh scripts/passwall-packages.txt scripts/passwall-capabilities.patch /tmp/
+COPY scripts/install-packages.sh scripts/passwall-packages.txt /tmp/
 COPY build/packages.adb /tmp/passwall-feed.adb
 COPY build/passwall-build.pem /etc/apk/keys/openwrt-passwall-build.pem
 RUN /bin/sh /tmp/install-packages.sh
