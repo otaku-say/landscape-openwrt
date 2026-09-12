@@ -52,8 +52,8 @@ services:
       - immortalwrt-dropbear:/etc/dropbear
     networks:
       edge:
-        ipv4_address: 172.30.80.2
-        ipv6_address: fd70:6c61:6e64:80::2
+        ipv4_address: 172.66.66.2
+        ipv6_address: fd70:6c61:6e64:66::2
     logging:
       driver: json-file
       options:
@@ -64,18 +64,18 @@ networks:
   edge:
     # 在 Landscape 将 ld-owrt0 设为 LAN，同时启用 LANv6 和 LAN 路由（LR）。
     # LANv6 选上游 PD 的空闲 /64、纯 RA；不要填写固定运营商前缀。
-    name: landscape-openwrt-edge
+    name: landscape-openwrt
     driver: bridge
     enable_ipv6: true
     driver_opts:
-      com.docker.network.bridge.name: ld-owrt0
+      com.docker.network.bridge.name: landscape-openwrt
       com.docker.network.bridge.enable_ip_masquerade: "true"
     ipam:
       config:
-        - subnet: 172.30.80.0/24
-          gateway: 172.30.80.1
-        - subnet: fd70:6c61:6e64:80::/64
-          gateway: fd70:6c61:6e64:80::1
+        - subnet: 172.66.66.0/24
+          gateway: 172.66.66.1
+        - subnet: fd70:6c61:6e64:66::/64
+          gateway: fd70:6c61:6e64:66::1
 
 volumes:
   immortalwrt-config:
