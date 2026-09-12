@@ -30,7 +30,7 @@ for device in /dev/console /dev/kmsg /dev/tty0 /dev/tty[0-9]* /dev/tty[A-Z]* \
     [ ! -L "$device" ] || fail "Unexpected console symlink: $device"
     if [ "$(stat -Lc '%t:%T' "$device")" != 1:3 ]; then
         [ "${1:-}" != --check ] || fail "Unmasked console device: $device"
-        mount --bind /dev/null "$device"
+        mount -o bind /dev/null "$device"
     fi
     [ -c "$device" ] && [ "$(stat -Lc '%t:%T' "$device")" = 1:3 ] \
         || fail "Console masking failed: $device"
