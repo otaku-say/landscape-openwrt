@@ -48,8 +48,8 @@ services:
           create_host_path: false
       # 不持久化整个 /etc 或根目录，否则会遮住新镜像文件。
       # 大版本重构使用全新卷，不读取或迁移旧 OpenWrt 配置。
-      - immortalwrt-config:/etc/config
-      - immortalwrt-dropbear:/etc/dropbear
+      - landscape-openwrt-config:/etc/config
+      - landscape-openwrt-dropbear:/etc/dropbear
     networks:
       edge:
         ipv4_address: 172.66.66.2
@@ -62,7 +62,7 @@ services:
 
 networks:
   edge:
-    # 在 Landscape 将 ld-owrt0 设为 LAN，同时启用 LANv6 和 LAN 路由（LR）。
+    # 在 Landscape 将 landscape-openwrt 设为 LAN，同时启用 LANv6 和 LAN 路由（LR）。
     # LANv6 选上游 PD 的空闲 /64、纯 RA；不要填写固定运营商前缀。
     name: landscape-openwrt
     driver: bridge
