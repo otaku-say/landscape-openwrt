@@ -21,6 +21,9 @@ uci add_list "uhttpd.main.listen_http=[::]:$http"
 uci add_list "uhttpd.main.listen_https=0.0.0.0:$https"
 uci add_list "uhttpd.main.listen_https=[::]:$https"
 uci set uhttpd.main.redirect_https=0
+# Bind the device instead of enumerating addresses before IPv6 DAD completes.
+uci -q delete 'dropbear.@dropbear[0].Interface' || true
+uci set 'dropbear.@dropbear[0].DirectInterface=lan'
 uci set "dropbear.@dropbear[0].Port=$ssh"
 uci set 'dropbear.@dropbear[0].PasswordAuth=on'
 uci set 'dropbear.@dropbear[0].RootPasswordAuth=on'

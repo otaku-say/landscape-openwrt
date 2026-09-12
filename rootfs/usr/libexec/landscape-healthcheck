@@ -16,6 +16,11 @@ ssh=$(uci get landscape.container.ssh_port)
 curl --noproxy '*' -fsS --max-time 2 "http://127.0.0.1:$http/" >/dev/null
 # A generated local certificate is self-signed; this probes service readiness only.
 curl --noproxy '*' -kfsS --max-time 2 "https://127.0.0.1:$https/" >/dev/null
-netstat -lnt | awk -v port=":$ssh" '$6 == "LISTEN" && substr($4, length($4)-length(port)+1) == port { found=1 } END { exit !found }'
+netstat -lnt | awk -v port=":$ssh" '
+    $6 == "LISTEN" && substr($4, length($4)-length(port)+1) == port {
+        address=$4
+        if (gsub(/:/, "", address) > 1) ipv6=1; else ipv4=1
+    }
+    END { exit !(ipv4 && ipv6) }'
 [ "$(sysctl -n net.ipv6.conf.eth0.accept_ra)" = 2 ]
 [ "$(sysctl -n net.ipv6.conf.eth0.autoconf)" = 1 ]

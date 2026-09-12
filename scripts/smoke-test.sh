@@ -22,6 +22,8 @@ cleanup() {
     timeout 15 docker exec "$name" logread > build/smoke-openwrt.log 2>&1 || true
     timeout 15 docker exec "$name" uci export firewall > build/smoke-uci-firewall.log 2>&1 || true
     timeout 15 docker exec "$name" uci export dhcp > build/smoke-uci-dhcp.log 2>&1 || true
+    timeout 15 docker exec "$name" uci export dropbear > build/smoke-uci-dropbear.log 2>&1 || true
+    timeout 15 docker exec "$name" netstat -lntp > build/smoke-listeners.log 2>&1 || true
     docker exec "$name" ip -4 route > build/smoke-ipv4.log 2>&1 || true
     docker exec "$name" ip -6 route > build/smoke-ipv6.log 2>&1 || true
     docker exec "$name" nft list ruleset > build/smoke-nft.log 2>&1 || true
