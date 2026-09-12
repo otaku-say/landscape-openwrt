@@ -64,9 +64,9 @@ def lan_return_path():
     router_mac = Path(f'/sys/class/net/{LAN_LINK}/address').read_text().strip()
     run('tc', 'qdisc', 'replace', 'dev', LAN_LINK, 'clsact')
     run('tc', 'qdisc', 'replace', 'dev', BRIDGE, 'clsact')
-    for protocol, address in (('ip', '10.77.0.2'), ('ipv6', 'fd70:6c61:6e64:77::2')):
-        # Model the enabled LR return path, without changing any host NAT rule.
-        run('tc', 'filter', 'replace', 'dev', BRIDGE, 'ingress', 'protocol', protocol, 'pref', '20',
+    for priority, (protocol, address) in enumerate((('ip', '10.77.0.2'), ('ipv6', 'fd70:6c61:6e64:77::2')), 20):
+        # One classifier priority cannot mix IPv4 and IPv6 protocols.
+        run('tc', 'filter', 'replace', 'dev', BRIDGE, 'ingress', 'protocol', protocol, 'pref', str(priority),
             'flower', 'skip_hw', 'dst_ip', address, 'action', 'pedit', 'ex',
             'munge', 'eth', 'dst', 'set', client_mac, 'munge', 'eth', 'src', 'set', router_mac,
             'action', 'mirred', 'egress', 'redirect', 'dev', LAN_LINK)
@@ -76,9 +76,9 @@ def tagged_redirect(name):
     network = json.loads(run('docker', 'inspect', '--format', '{{json .NetworkSettings.Networks}}', name))
     mac = next(iter(network.values()))['MacAddress']
     source_mac = Path(f'/sys/class/net/{BRIDGE}/address').read_text().strip()
-    for protocol, address in (('ip', REMOTE4), ('ipv6', REMOTE6)):
+    for priority, (protocol, address) in enumerate((('ip', REMOTE4), ('ipv6', REMOTE6)), 20):
         # VLAN 0xc07 is Landscape flow 7. The shipped route handler must pop it.
-        run('tc', 'filter', 'replace', 'dev', LAN_LINK, 'ingress', 'protocol', protocol, 'pref', '20',
+        run('tc', 'filter', 'replace', 'dev', LAN_LINK, 'ingress', 'protocol', protocol, 'pref', str(priority),
             'flower', 'skip_hw', 'dst_ip', address, 'action', 'pedit', 'ex',
             'munge', 'eth', 'dst', 'set', mac, 'munge', 'eth', 'src', 'set', source_mac,
             'action', 'vlan', 'push', 'protocol', '802.1Q', 'id', '3079',
@@ -176,8 +176,8 @@ def main():
             inside(name, 'uci', 'import', 'passwall', data=backup)
             inside(name, 'uci', 'commit', 'passwall')
             for interface in (LAN_LINK, BRIDGE):
-                for protocol in ('ip', 'ipv6'):
-                    run('tc', 'filter', 'del', 'dev', interface, 'ingress', 'protocol', protocol, 'pref', '20', check=False)
+                for priority, protocol in enumerate(('ip', 'ipv6'), 20):
+                    run('tc', 'filter', 'del', 'dev', interface, 'ingress', 'protocol', protocol, 'pref', str(priority), check=False)
             for process in processes:
                 process.terminate()
                 try:
