@@ -162,7 +162,7 @@ docker exec landscape-openwrt nslookup www.baidu.com 127.0.0.1
 docker inspect --format '{{json .State.Health}}' landscape-openwrt
 ```
 
-CI 除基础管理测试外，还创建隔离 LAN/WAN：对 TCP/UDP 流量添加 Landscape VLAN 标记，由镜像中的真实官方接应程序去标记，再由实际启用的 PassWall 经隔离 VLESS 节点访问目标。分别验证 IPv4/IPv6 目标与两种地址族的代理节点，通过目标观察到的来源确认流量确实经过代理，而非直接绕行。CI 的 TC 转发夹具模拟启用 LR 的双向路径，不修改宿主机 NAT 来让测试通过。
+CI 除基础管理测试外，还创建隔离 LAN/WAN：对 TCP/UDP 流量添加 Landscape VLAN 标记，由镜像中的真实官方接应程序去标记，再由实际启用的 PassWall 经隔离 VLESS 节点访问目标。分别验证客户端和容器本机代理、IPv4/IPv6 目标与两种地址族的代理节点，通过目标观察到的来源确认流量确实经过代理，而非直接绕行。CI 的 TC 转发夹具模拟启用 LR 的双向路径，不修改宿主机 NAT 来让测试通过。
 
 另检查容器 IPv4/ULA 出网 NAT 保留、代理开启时的管理可达性、默认和自定义管理端口、旧端口关闭、访问限制、真实 LuCI/SSH 密码登录、SSH 身份与 PassWall 配置持久化，以及 dnsmasq A/AAAA、模拟注册和 SLAAC 前缀更新。
 

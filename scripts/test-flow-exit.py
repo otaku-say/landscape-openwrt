@@ -85,15 +85,15 @@ def tagged_redirect(name):
             'action', 'mirred', 'egress', 'redirect', 'dev', BRIDGE)
 
 
-def requests():
+def requests(prefix, label):
     for address in (REMOTE4, REMOTE6):
         authority = f'[{address}]' if ':' in address else address
-        peer = run('ip', 'netns', 'exec', CLIENT, 'curl', '--noproxy', '*', '-gfsS', '--max-time', '10',
+        peer = run(*prefix, 'curl', '--noproxy', '*', '-gfsS', '--max-time', '10',
                    f'http://{authority}:18081/')
         assert ip(peer) == ip(address), ('TCP bypassed the test proxy', address, peer)
-        peer = run('ip', 'netns', 'exec', CLIENT, sys.executable, 'scripts/exit-target.py', 'udp', address)
+        peer = run(*prefix, sys.executable, 'scripts/exit-target.py', 'udp', address)
         assert ip(peer) == ip(address), ('UDP bypassed the test proxy', address, peer)
-    print('PASS: Landscape-tagged IPv4/IPv6 TCP and UDP traverse real PassWall and the isolated VLESS exit', flush=True)
+    print(f'PASS: {label} IPv4/IPv6 TCP and UDP traverse real PassWall and the isolated VLESS exit', flush=True)
 
 
 def main():
@@ -137,7 +137,7 @@ def main():
                        'landscape_exit.uuid': identity, 'landscape_exit.encryption': 'none',
                        'landscape_exit.transport': 'raw', 'landscape_exit.tls': '0',
                        '@global[0].enabled': '1', '@global[0].node': 'landscape_exit',
-                       '@global[0].client_proxy': '1', '@global[0].localhost_proxy': '0',
+                       '@global[0].client_proxy': '1', '@global[0].localhost_proxy': '1',
                        '@global[0].filter_proxy_ipv6': '0', '@global[0].use_direct_list': '0',
                        '@global[0].use_proxy_list': '0', '@global[0].use_block_list': '0',
                        '@global[0].use_gfw_list': '0', '@global[0].chn_list': '0',
@@ -151,7 +151,9 @@ def main():
                 inside(name, '/etc/init.d/passwall', 'restart', timeout=90)
                 time.sleep(5)
                 assert 'PSW' in inside(name, 'nft', 'list', 'ruleset'), 'PassWall did not create transparent proxy rules'
-                requests()
+                requests(('ip', 'netns', 'exec', CLIENT), 'Landscape-tagged client')
+                pid = run('docker', 'inspect', '--format', '{{.State.Pid}}', name)
+                requests(('nsenter', '--target', pid, '--net'), 'Container localhost')
                 print(f'PASS: proxy transport to {node_address} with LR-style forwarding and unchanged host NAT', flush=True)
             assert '203.0.113.1:' in (root / 'access.log').read_text(), 'VLESS node did not observe preserved IPv4 outbound NAT'
             # Management remains reachable while transparent proxying is enabled.

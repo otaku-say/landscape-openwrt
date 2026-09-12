@@ -69,6 +69,12 @@ class ProxyControls(HTMLParser):
         values = dict(attrs)
         if tag == 'input' and values.get('type') == 'checkbox' and 'disabled' not in values:
             self.enabled.add(values.get('name', '').rsplit('.', 1)[-1])
+        if 'data-ui-widget' in values:
+            widget = json.loads(values['data-ui-widget'])
+            if widget[0] == 'Checkbox':
+                options = widget[2]
+                if not options.get('readonly') and not options.get('disabled'):
+                    self.enabled.add(options.get('name', '').rsplit('.', 1)[-1])
 
 
 with opener.open(base + '/admin/services/passwall', timeout=20) as response:
@@ -81,6 +87,8 @@ with opener.open(base + '/admin/services/passwall', timeout=20) as response:
     controls.feed(html)
     assert {'localhost_proxy', 'client_proxy'} <= controls.enabled, 'Transparent proxy controls are disabled'
 subprocess.check_call(['docker', 'exec', name, '/usr/libexec/landscape-proxy-check'])
+assert b'landscape_proxy_probe_' not in subprocess.check_output(['docker', 'exec', name, 'nft', 'list', 'tables'])
+print('PASS: both PassWall proxy controls enabled through actual kernel capability checks, with no probe rules installed')
 raw = subprocess.check_output(['docker', 'exec', name, 'apk', 'query', '--installed', '--format', 'json', '--fields', 'name,version', '*'])
 packages = {p['name']: p['version'] for p in json.loads(raw)}
 metadata = json.loads(subprocess.check_output(['docker', 'exec', name, 'cat', '/usr/share/landscape-openwrt/upstream.json']))
