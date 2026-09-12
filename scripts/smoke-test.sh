@@ -8,6 +8,7 @@ keys=landscape-openwrt-smoke-keys
 socket_dir=$(mktemp -d)
 server_pid=
 fixture_pid=
+dns_capture_pid=
 mkdir -p build
 python=build/test-venv/bin/python
 # Generated per CI run; never trace or print this environment.
@@ -25,6 +26,10 @@ cleanup() {
     timeout 15 docker exec "$name" uci export dhcp > build/smoke-uci-dhcp.log 2>&1 || true
     timeout 15 docker exec "$name" uci export network > build/smoke-uci-network.log 2>&1 || true
     timeout 15 docker exec "$name" cat /tmp/resolv.conf.d/resolv.conf.auto > build/smoke-resolv.log 2>&1 || true
+    ip -6 addr show dev ld-owrt-test > build/smoke-host-ipv6.log 2>&1 || true
+    ip -6 neigh show dev ld-owrt-test > build/smoke-host-neigh.log 2>&1 || true
+    ss -lnup 'sport = :53' > build/smoke-host-dns.log 2>&1 || true
+    if [[ -n "$dns_capture_pid" ]]; then sudo kill "$dns_capture_pid" 2>/dev/null || true; wait "$dns_capture_pid" 2>/dev/null || true; fi
     timeout 15 docker exec "$name" uci export dropbear > build/smoke-uci-dropbear.log 2>&1 || true
     timeout 15 docker exec "$name" netstat -lntp > build/smoke-listeners.log 2>&1 || true
     timeout 15 docker exec "$name" cat /tmp/landscape-proxy-check.log > build/smoke-proxy-check.log 2>&1 || true
@@ -59,6 +64,10 @@ sudo "$python" scripts/network-fixture.py serve "$socket_dir" > build/smoke-netw
 fixture_pid=$!
 for _ in {1..20}; do [[ ! -f "$socket_dir/network-ready" ]] || break; sleep 1; done
 [[ -f "$socket_dir/network-ready" ]]
+# Keep DNS and neighbor-discovery evidence when an actual lookup fails.
+# shellcheck disable=SC2024
+sudo tcpdump -l -nne -s 256 -i ld-owrt-test 'port 53 or icmp6' > build/smoke-dns-packets.log 2>&1 &
+dns_capture_pid=$!
 
 start_container() {
     docker run -d --name "$name" --privileged --network "$network" \

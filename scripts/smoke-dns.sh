@@ -14,7 +14,13 @@ case "${1:-}" in
         [ "$(uci get 'dhcp.@dnsmasq[0].resolvfile')" = /tmp/resolv.conf.d/resolv.conf.auto ]
         for address in $expected; do
             grep -Fx "nameserver $address" /tmp/resolv.conf.d/resolv.conf.auto
-            nslookup smoke.example.net "$address" | grep -F '2606:4700:4700::1111'
+            lookup=$(nslookup smoke.example.net "$address" 2>&1) || {
+                printf '%s\n' "$lookup" >&2
+                ip -6 address show dev eth0 >&2
+                ip -6 neigh show dev eth0 >&2
+                exit 1
+            }
+            printf '%s\n' "$lookup" | grep -F '2606:4700:4700::1111'
         done
         count=$(printf '%s\n' "$expected" | wc -w)
         [ "$(grep -c '^nameserver ' /tmp/resolv.conf.d/resolv.conf.auto)" -eq "$count" ]
