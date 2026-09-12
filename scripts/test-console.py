@@ -83,7 +83,10 @@ def check(root, name=None):
             assert command not in ('askfirst', 'agetty', 'getty', 'login'), line
             assert not terminal.startswith(('ttyS', 'tty1', 'hvc')), line
         # Interactive management must retain its own devpts terminal.
-        terminal = subprocess.check_output(['docker', 'exec', '-t', name, 'tty'], text=True).strip()
+        terminal = subprocess.check_output([
+            'docker', 'exec', '-t', name, 'sh', '-ec',
+            'test -t 0; test -t 1; readlink /proc/self/fd/0',
+        ], text=True).strip()
         assert terminal.startswith('/dev/pts/'), terminal
         inside('logger', '-t', 'console-smoke', 'container syslog remains available')
         assert 'container syslog remains available' in inside('logread')
