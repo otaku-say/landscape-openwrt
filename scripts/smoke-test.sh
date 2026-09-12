@@ -66,7 +66,7 @@ for _ in {1..20}; do [[ ! -f "$socket_dir/network-ready" ]] || break; sleep 1; d
 [[ -f "$socket_dir/network-ready" ]]
 # Keep DNS and neighbor-discovery evidence when an actual lookup fails.
 # shellcheck disable=SC2024
-sudo tcpdump -l -nne -s 256 -i ld-owrt-test 'port 53 or icmp6' > build/smoke-dns-packets.log 2>&1 &
+sudo tcpdump -p -l -nne -s 256 -i ld-owrt-test 'port 53 or icmp6' > build/smoke-dns-packets.log 2>&1 &
 dns_capture_pid=$!
 
 start_container() {
