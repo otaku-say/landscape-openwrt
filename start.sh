@@ -32,6 +32,7 @@ export TZ="$tz"
 dns_servers=$(/usr/libexec/landscape-network-dns)
 
 /usr/libexec/landscape-management --check
+/usr/libexec/landscape-console
 /usr/libexec/landscape-password
 unset LAND_ROOT_PASSWORD
 

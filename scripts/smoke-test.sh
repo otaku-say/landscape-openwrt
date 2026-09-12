@@ -9,6 +9,7 @@ socket_dir=$(mktemp -d)
 server_pid=
 fixture_pid=
 dns_capture_pid=
+console_pid=
 mkdir -p build
 python=build/test-venv/bin/python
 # Generated per CI run; never trace or print this environment.
@@ -41,6 +42,7 @@ cleanup() {
         wait "$fixture_pid" 2>/dev/null || true
     fi
     docker rm -f "${name}-client" "$name" >/dev/null 2>&1 || true
+    if [[ -n "$console_pid" ]]; then kill "$console_pid" 2>/dev/null || true; wait "$console_pid" 2>/dev/null || true; fi
     docker network rm "$network" >/dev/null 2>&1 || true
     docker volume rm "$volume" "$keys" >/dev/null 2>&1 || true
     if [[ -n "$server_pid" ]]; then kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true; fi
@@ -69,8 +71,21 @@ for _ in {1..20}; do [[ ! -f "$socket_dir/network-ready" ]] || break; sleep 1; d
 sudo tcpdump -p -l -nne -s 256 -i ld-owrt-test 'port 53 or icmp6' > build/smoke-dns-packets.log 2>&1 &
 dns_capture_pid=$!
 
+# Dedicated PTYs represent the VM serial console and virtual terminal, not runner hardware.
+python3 scripts/test-console.py serve "$socket_dir" > build/smoke-console.log 2>&1 &
+console_pid=$!
+for _ in {1..20}; do [[ ! -s "$socket_dir/console-devices.json" ]] || break; sleep 1; done
+[[ -s "$socket_dir/console-devices.json" ]]
+serial_device=$(jq -r '.[0]' "$socket_dir/console-devices.json")
+vt_device=$(jq -r '.[1]' "$socket_dir/console-devices.json")
+
 start_container() {
     docker run -d --name "$name" --privileged --network "$network" \
+        --mount "type=bind,src=$serial_device,dst=/dev/ttyS0" \
+        --mount "type=bind,src=$serial_device,dst=/dev/console" \
+        --mount "type=bind,src=$serial_device,dst=/dev/kmsg" \
+        --mount "type=bind,src=$vt_device,dst=/dev/tty1" \
+        --mount "type=bind,src=$socket_dir/console-cmdline,dst=/proc/cmdline,readonly" \
         --ip 172.30.80.2 --ip6 fd70:6c61:6e64:80::2 \
         --label ld_flow_edge=true --ulimit memlock=-1:-1 \
         -e LAND_DNS_ADDR -e LAND_ROOT_PASSWORD -e TZ \
@@ -92,6 +107,14 @@ wait_healthy() {
 }
 start_container
 wait_healthy
+python3 scripts/test-console.py check "$socket_dir" "$name"
+# A normal restart must reapply device masks without changing the VM console.
+docker stop -t 30 "$name"
+[[ $(docker inspect -f '{{.State.ExitCode}}' "$name") != 137 ]]
+python3 scripts/test-console.py check "$socket_dir"
+docker start "$name"
+wait_healthy
+python3 scripts/test-console.py check "$socket_dir" "$name"
 docker exec -i "$name" sh -s -- --fresh < scripts/smoke-dns.sh
 [[ -z $(docker port "$name") ]]
 "$python" scripts/test-management.py '172.30.80.2,fd70:6c61:6e64:80::2' "$LUCI_HTTP_PORT" "$LUCI_HTTPS_PORT" "$SSH_PORT"
@@ -159,6 +182,7 @@ SSH_PORT=12222
 LAND_DNS_ADDR=fd70:6c61:6e64:80::1
 start_container
 wait_healthy
+python3 scripts/test-console.py check "$socket_dir" "$name"
 [[ $(docker exec "$name" uci get 'dhcp.@dnsmasq[0].server') == /retained.example.net/172.30.80.1 ]]
 docker exec -i "$name" sh -s -- --interface < scripts/smoke-dns.sh
 echo 'PASS: IPv6-only interface DNS replaces the old list while custom forwarding survives recreation'
@@ -174,4 +198,4 @@ docker exec "$name" sh -ec '
   uci delete passwall.landscape_smoke
   uci commit
 '
-echo 'PASS: real tagged PassWall TCP/UDP exits, preserved outbound NAT, native management, password/port rotation and DNS/SLAAC.'
+echo 'PASS: isolated host consoles, real tagged PassWall TCP/UDP exits, preserved outbound NAT, native management, password/port rotation and DNS/SLAAC.'

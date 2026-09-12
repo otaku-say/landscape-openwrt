@@ -108,7 +108,7 @@ jobs:
             echo '## Published tested image'
             echo "\`$IMAGE:latest\`"
             echo "ImmortalWrt: $version; PassWall: $PASSWALL; redirect_pkg_handler: $HANDLER"
-            echo 'Tests cover tagged official-handler traffic through real PassWall TCP/UDP proxy exits over IPv4/IPv6, preserved outbound NAT, native management, passwords, SSH identity, DNS and SLAAC renewal.'
+            echo 'Tests cover host-console isolation across boot/restart/recreation/shutdown, tagged official-handler traffic through real PassWall TCP/UDP proxy exits over IPv4/IPv6, preserved outbound NAT, native management, passwords, SSH identity, DNS and SLAAC renewal.'
             echo 'A real Landscape Flow and an external proxy subscription still require deployment acceptance.'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Unchanged inputs

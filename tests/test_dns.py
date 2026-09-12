@@ -126,8 +126,13 @@ if sys.argv[1:] == ['-q', 'get', 'landscape.container.initialized']:
         self.assertNotIn('landscape.container.dns', initializer)
         self.assertNotIn('.server', initializer)
 
-    def test_image_checks_native_validator_and_retains_example_default(self):
+    def test_image_checks_native_validator_and_accepts_example_dns(self):
         dockerfile = (ROOT / 'Dockerfile').read_text()
         self.assertIn('chpasswd validate_data xray', dockerfile)
         self.assertIn('LAND_DNS_ADDR=8.8.8.8', dockerfile)
-        self.assertIn('LAND_DNS_ADDR=8.8.8.8', (ROOT / '.env.example').read_text())
+        examples = [line.partition('=')[2] for line in (ROOT / '.env.example').read_text().splitlines()
+                    if line.startswith('LAND_DNS_ADDR=')]
+        self.assertEqual(len(examples), 1)
+        result = self.parse(examples[0])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(result.stdout.strip())

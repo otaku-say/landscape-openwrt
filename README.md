@@ -124,6 +124,27 @@ docker exec landscape-openwrt /usr/libexec/landscape-proxy-check
 
 若检查失败，LuCI 仍可用于诊断，但容器健康检查不会通过。查看 `/tmp/landscape-proxy-check.log`，由宿主机安装/加载与其内核版本匹配的 `nft_redir`、`nft_tproxy`、`nft_socket` 等模块；不能通过给容器安装另一版本的 OpenWrt kmod 修复宿主内核缺失。
 
+## 宿主控制台隔离
+
+容器只通过 LuCI、SSH 或 `docker exec -it landscape-openwrt sh` 管理，不在 Debian/PVE 的串口或虚拟终端提供登录。镜像的 `/etc/inittab` 仅保留系统启动、关机项，不运行 `askfirst` / `askconsole`。
+
+每次启动，在官方 `/sbin/init` 执行前，`landscape-console` 会检查 Docker 的私有 `/dev` tmpfs，并在当前容器挂载命名空间内将 `/dev/console`、`/dev/kmsg`、虚拟终端及已存在的串口控制台设备绑定到 `/dev/null`。这样也能阻止 procd 在启动、关机时按宿主内核 `console=` 参数写入串口。保留 `/dev/tty`、`/dev/pts`、`/dev/ptmx`，不影响 SSH 和 `docker exec -it`。不改宿主设备、内核启动参数或 getty 服务，也不修改 procd、PassWall 的官方程序。
+
+这项隔离用于防止特权容器误用宿主控制台，不是对恶意特权进程的安全边界。它会抑制硬件控制台与 kmsg 输出；OpenWrt 服务日志仍通过 `docker exec landscape-openwrt logread` 查看。健康检查会验证设备屏蔽仍然有效。
+
+从发生过串口争用的旧镜像升级后，先拉取并重建容器，再检查：
+
+```bash
+docker compose pull
+docker compose up -d
+docker exec landscape-openwrt /usr/libexec/landscape-console --check
+docker top landscape-openwrt -eo pid,ppid,tty,stat,comm
+```
+
+检查成功时第一条诊断没有输出，进程中不应再有占用 `ttyS0` / `tty1` 的容器登录程序。已有 Debian 串口会话若尚未恢复，从 Debian SSH 执行一次 `systemctl restart serial-getty@ttyS0.service`（仅适用于串口确实是 `ttyS0` 的部署）。该命令终止并重建串口登录会话，不重启系统，也无需长期重复执行或禁用宿主 getty。
+
+`/etc/inittab` 不在配置卷中，因此这项修复随镜像更新，不覆盖现有 PassWall、DNS 和 SSH 配置；不要为了升级删除配置卷。
+
 ## 配置与组件
 
 `LAND_DNS_ADDR` 只设置「网络 → 接口 → 自定义 DNS 服务器」（`network.lan.dns`），每次启动重新应用。支持单个地址，或使用英文逗号分隔多个 IPv4/IPv6 地址；逗号两侧可有空格，不支持空项、域名、URL、端口、CIDR 或换行。示例：
@@ -187,6 +208,8 @@ docker inspect --format '{{json .State.Health}}' landscape-openwrt
 ```
 
 CI 除基础管理测试外，还创建隔离 LAN/WAN：对 TCP/UDP 流量添加 Landscape VLAN 标记，由镜像中的真实官方接应程序去标记，再由实际启用的 PassWall 经隔离 VLESS 节点访问目标。分别验证客户端和容器本机代理、IPv4/IPv6 目标与两种地址族的代理节点，通过目标观察到的来源确认流量确实经过代理，而非直接绕行。CI 的 TC 转发夹具模拟启用 LR 的双向路径，不修改宿主机 NAT 来让测试通过。
+
+控制台测试使用专用伪终端模拟宿主 `ttyS0`、`tty1`、`console`、`kmsg`，并为候选容器提供隔离的 `console=ttyS0,115200n8`。检查正常启动、停止、同容器重启和带配置卷重建期间没有控制台输出或终端属性改写，同时验证容器内独立 PTY、procd 和服务日志可用。测试夹具自身也有注入输出和属性变更的反向测试，避免把无法观测误当作通过。CI 不运行 PVE xterm.js，仍需现场验收网页终端。
 
 另检查容器 IPv4/ULA 出网 NAT 保留、代理开启时的管理可达性、默认和自定义管理端口、旧端口关闭、访问限制、真实 LuCI/SSH 密码登录、SSH 身份与 PassWall 配置持久化，以及 dnsmasq A/AAAA、模拟注册和 SLAAC 前缀更新。
 

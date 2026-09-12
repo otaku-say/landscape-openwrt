@@ -1,0 +1,37 @@
+#!/bin/sh
+# Keep procd's console opens inside Docker, including its shutdown fallback.
+set -eu
+fail() { printf 'landscape-console: %s\n' "$*" >&2; exit 1; }
+case "${1:-}" in ''|--check) ;; *) fail 'Usage: landscape-console [--check]' ;; esac
+[ -f /.dockerenv ] || fail 'Only run inside the Docker container.'
+# Do not bind over a host /dev or propagate mounts into another namespace.
+awk '
+    $5 == "/dev" {
+        for (i = 7; i <= NF && $i != "-"; i++)
+            if ($i ~ /^(shared|master):/) exit 1
+        if ($(i + 1) == "tmpfs") ok = 1
+    }
+    END { if (!ok) exit 1 }
+' /proc/self/mountinfo || fail 'A private Docker tmpfs at /dev is required.'
+
+# /dev/tty and /dev/pts are deliberately retained for SSH and docker exec -it.
+for device in /dev/console /dev/kmsg /dev/tty0 /dev/tty[0-9]* /dev/tty[A-Z]* \
+    /dev/hvc[0-9]* /dev/hvsi[0-9]* /dev/xvc[0-9]*; do
+    if [ ! -e "$device" ]; then
+        case "$device" in
+            /dev/console|/dev/kmsg|/dev/tty0)
+                [ "${1:-}" != --check ] || fail "Missing console mask: $device"
+                [ ! -L "$device" ] || fail "Unexpected console symlink: $device"
+                : > "$device"
+                ;;
+            *) continue ;;
+        esac
+    fi
+    [ ! -L "$device" ] || fail "Unexpected console symlink: $device"
+    if [ "$(stat -Lc '%t:%T' "$device")" != 1:3 ]; then
+        [ "${1:-}" != --check ] || fail "Unmasked console device: $device"
+        mount --bind /dev/null "$device"
+    fi
+    [ -c "$device" ] && [ "$(stat -Lc '%t:%T' "$device")" = 1:3 ] \
+        || fail "Console masking failed: $device"
+done
