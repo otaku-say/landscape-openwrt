@@ -83,6 +83,40 @@ docker compose up -d
 
 Docker 不能在已有网络上原地更改 gateway mode。全新部署需创建带上述选项的新网络；网络名称如已被其他部署占用，应先规划停机释放，或使用不同名称和不重叠的网段。不要执行 `down -v` 或删除未备份的数据来腾位置。
 
+## 接应程序日志
+
+接应日志默认仅输出 `ERROR`，不再输出正常注册、心跳等 `INFO` 内容。`.env` 可配置：
+
+```dotenv
+LAND_REDIRECT_LOG_LEVEL=ERROR
+```
+
+要完全静默则设为 `LAND_REDIRECT_LOG_LEVEL=OFF`：除了向官方程序传入 `--log-level OFF`，还关闭 procd 对该接应进程 stdout/stderr 的日志收集。接应注册、转发、自动重启仍正常工作；PassWall、dnsmasq、系统日志服务不受影响。排障可临时改为 `WARN`、`INFO`、`DEBUG` 或 `TRACE`。
+
+已有部署的 `.env` 若仍写着 `INFO`，升级镜像不会覆盖该显式设置，需要自行改为 `ERROR` 或 `OFF`，然后执行 `docker compose up -d --no-deps --force-recreate openwrt`。运行时会同步 UCI 中的 `landscape.container.log_level`，无需清空配置卷。省略或留空此变量时采用 `ERROR`。
+
+LuCI 中的 `daemon.info: redirect_pkg_handler[...]` 是 procd 收集 stdout 时使用的 syslog 级别，不等于接应内部的日志级别：`ERROR` 内容仍可能显示在该前缀下。`OFF` 才是完全不收集该进程输出；历史日志不会因此删除，也不会隐藏服务启动失败等由管理脚本产生的错误。
+
+## 固定容器 MAC
+
+`.env` 中的 `EDGE_MAC_ADDRESS` 固定容器 `eth0` 的 MAC，默认使用有规律的本地管理单播地址：
+
+```dotenv
+EDGE_MAC_ADDRESS=AA:BB:CC:DD:EE:FF
+```
+
+Compose 在 `services.openwrt.networks.edge.mac_address` 设置该地址，不是修改宿主机网桥的 MAC。保持原有项目名、网络和卷名时，重建容器后 MAC 仍相同，IPv4/ULA 与 PassWall 持久配置保持原设置。多个实例必须使用不同的 MAC，例如将末尾改为 `FE`；不能使用 `01:02:03:04:05:06` 等组播地址。
+
+已有部署只在实际 `.env` 中新增这一项，不要用示例文件覆盖现有密码和配置。应用前确认使用支持网络级 `mac_address` 的新版 Compose v2。修改后在 Debian 虚拟机的原 Compose 目录执行：
+
+```bash
+docker compose config --quiet
+docker compose up -d --no-deps --force-recreate openwrt
+docker compose exec -T openwrt cat /sys/class/net/eth0/address
+```
+
+重建会短暂中断该容器提供的代理服务；仅执行 `docker compose restart` 不会应用 MAC 改动。无需重建镜像或执行 `down -v`。内核通常显示为小写 `aa:bb:cc:dd:ee:ff`，与设置值相同。若曾在 LuCI 中手动覆盖 `eth0` 的 MAC，先移除该覆盖，以 Compose 为准。
+
 ## Landscape 与动态 IPv6
 
 1. 只连接一个 Docker bridge，使用 cgroup v2，保留 `ld_flow_edge: "true"` 和只读 socket 挂载；不使用 host/macvlan 网络、额外网卡或 `init: true`。

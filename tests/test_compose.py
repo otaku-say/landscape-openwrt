@@ -13,8 +13,9 @@ spec.loader.exec_module(compose)
 def fixture(ipv4='10.10.66', ipv6='fd10:10:66'):
     resolved = {
         'LAND_ROOT_PASSWORD': 'test$with# spaces', 'TZ': 'Etc/UTC',
-        'LAND_DNS_ADDR': '8.8.8.8', 'LAND_REDIRECT_LOG_LEVEL': 'INFO',
+        'LAND_DNS_ADDR': '8.8.8.8', 'LAND_REDIRECT_LOG_LEVEL': 'ERROR',
         'EDGE_BRIDGE_NAME': 'br-custom', 'EDGE_NETWORK_NAME': 'custom-network',
+        'EDGE_MAC_ADDRESS': 'AA:BB:CC:DD:EE:FF',
         'LANDSCAPE_SOCKET_DIR': '/tmp/custom/unix_link',
         'CONFIG_VOLUME_NAME': 'custom-config', 'DROPBEAR_VOLUME_NAME': 'custom-dropbear',
         'EDGE_IPV4_SUBNET': f'{ipv4}.0/24', 'EDGE_IPV4_GATEWAY': f'{ipv4}.1', 'EDGE_IPV4_ADDRESS': f'{ipv4}.2',
@@ -27,7 +28,11 @@ def fixture(ipv4='10.10.66', ipv6='fd10:10:66'):
     config = {
         'services': {'openwrt': {
             'environment': environment,
-            'networks': {'edge': {'ipv4_address': resolved['EDGE_IPV4_ADDRESS'], 'ipv6_address': resolved['EDGE_IPV6_ADDRESS']}},
+            'networks': {'edge': {
+                'mac_address': resolved['EDGE_MAC_ADDRESS'],
+                'ipv4_address': resolved['EDGE_IPV4_ADDRESS'],
+                'ipv6_address': resolved['EDGE_IPV6_ADDRESS'],
+            }},
             'volumes': [
                 {'type': 'bind', 'source': resolved['LANDSCAPE_SOCKET_DIR'], 'target': '/ld_unix_link', 'read_only': True},
                 {'type': 'volume', 'source': 'landscape-openwrt-config', 'target': '/etc/config'},
@@ -60,6 +65,35 @@ class ComposeValidationTest(unittest.TestCase):
         for prefix in ('10.10.66', '10.66.66', '172.30.66', '192.168.66'):
             with self.subTest(prefix=prefix):
                 compose.validate_config(*fixture(ipv4=prefix))
+
+    def test_valid_unicast_mac_addresses(self):
+        for mac in ('AA:BB:CC:DD:EE:FF', '02:02:03:04:05:06', 'F2:DA:EC:0E:01:84', '00:11:22:33:44:55'):
+            config, resolved = fixture()
+            resolved['EDGE_MAC_ADDRESS'] = mac
+            config['services']['openwrt']['networks']['edge']['mac_address'] = mac.lower()
+            with self.subTest(mac=mac):
+                compose.validate_config(config, resolved)
+
+    def test_invalid_mac_addresses_are_rejected(self):
+        for mac in ('01:02:03:04:05:06', 'FF:FF:FF:FF:FF:FF', '00:00:00:00:00:00', '',
+                    'AA:BB:CC:DD:EE', 'AA:BB:CC:DD:EE:GG', 'AA-BB-CC-DD-EE-FF',
+                    'A:BB:CC:DD:EE:FF', 'AA:BB:CC:DD:EE:FF:00', ' AA:BB:CC:DD:EE:FF'):
+            config, resolved = fixture()
+            resolved['EDGE_MAC_ADDRESS'] = mac
+            config['services']['openwrt']['networks']['edge']['mac_address'] = mac
+            with self.subTest(mac=mac), self.assertRaises(AssertionError):
+                compose.validate_config(config, resolved)
+
+    def test_rendered_mac_must_match_network_endpoint(self):
+        for value in ('02:00:00:00:00:02', None):
+            config, resolved = fixture()
+            endpoint = config['services']['openwrt']['networks']['edge']
+            if value is None:
+                config['services']['openwrt']['mac_address'] = endpoint.pop('mac_address')
+            else:
+                endpoint['mac_address'] = value
+            with self.subTest(value=value), self.assertRaises(AssertionError):
+                compose.validate_config(config, resolved)
 
     def test_non_rfc1918_ranges_are_rejected(self):
         for prefix in ('172.15.66', '172.32.66', '172.66.66', '100.64.0', '127.0.0', '169.254.0', '192.0.2', '8.8.8'):
@@ -184,6 +218,23 @@ class ComposeValidationTest(unittest.TestCase):
                 config['services']['openwrt']['environment'][key] = resolved[key] or default
             with self.subTest(ports=ports):
                 compose.validate_config(config, resolved)
+
+    def test_handler_log_levels_and_default(self):
+        for value in (None, '', 'ERROR', 'OFF', 'WARN', 'INFO', 'DEBUG', 'TRACE'):
+            config, resolved = fixture()
+            if value is None:
+                resolved.pop('LAND_REDIRECT_LOG_LEVEL')
+            else:
+                resolved['LAND_REDIRECT_LOG_LEVEL'] = value
+            config['services']['openwrt']['environment']['LAND_REDIRECT_LOG_LEVEL'] = value or 'ERROR'
+            with self.subTest(value=value):
+                compose.validate_config(config, resolved)
+
+    def test_handler_log_level_mismatch_is_rejected(self):
+        config, resolved = fixture()
+        config['services']['openwrt']['environment']['LAND_REDIRECT_LOG_LEVEL'] = 'INFO'
+        with self.assertRaisesRegex(AssertionError, 'log level'):
+            compose.validate_config(config, resolved)
 
     def test_invalid_bridge_names(self):
         for name in ('x' * 16, '\u754c' * 6, '.', '..', 'br/edge', 'br:edge', 'br edge', ''):

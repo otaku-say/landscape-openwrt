@@ -23,7 +23,7 @@ gw4=$(ip -4 route show default dev eth0 | awk '$1 == "default" && $2 == "via" {p
 gw6=$(ip -6 route show default dev eth0 | awk '$1 == "default" && $2 == "via" {print $3; exit}')
 [ -n "$ip4" ] && [ -n "$gw4" ] || fail 'Docker must supply an IPv4 address and gateway.'
 [ -n "$ip6" ] && [ -n "$gw6" ] || fail 'Docker must supply an IPv6 address and gateway; enable IPv6 on its bridge.'
-log_level=${LAND_REDIRECT_LOG_LEVEL:-INFO}
+log_level=${LAND_REDIRECT_LOG_LEVEL:-ERROR}
 case "$log_level" in OFF|ERROR|WARN|INFO|DEBUG|TRACE) ;; *) fail 'Invalid LAND_REDIRECT_LOG_LEVEL.' ;; esac
 tz=${TZ:-Asia/Shanghai}
 case "$tz" in ''|/*|*..*|*[!A-Za-z0-9_+/-]*) fail 'TZ must be a valid IANA timezone.' ;; esac

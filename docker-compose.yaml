@@ -20,7 +20,7 @@ services:
       LAND_ROOT_PASSWORD: ${LAND_ROOT_PASSWORD:?Set LAND_ROOT_PASSWORD in .env}
       TZ: ${TZ:?Set TZ in .env}
       LAND_DNS_ADDR: ${LAND_DNS_ADDR:?Set LAND_DNS_ADDR in .env}
-      LAND_REDIRECT_LOG_LEVEL: ${LAND_REDIRECT_LOG_LEVEL:?Set LAND_REDIRECT_LOG_LEVEL in .env}
+      LAND_REDIRECT_LOG_LEVEL: ${LAND_REDIRECT_LOG_LEVEL:-ERROR}
       LUCI_HTTP_PORT: ${LUCI_HTTP_PORT:-80}
       LUCI_HTTPS_PORT: ${LUCI_HTTPS_PORT:-443}
       SSH_PORT: ${SSH_PORT:-22}
@@ -45,6 +45,8 @@ services:
       - landscape-openwrt-dropbear:/etc/dropbear
     networks:
       edge:
+        # 固定容器 eth0 的 MAC；使用网络级设置，兼容较新的 Docker Engine。
+        mac_address: ${EDGE_MAC_ADDRESS:?Set EDGE_MAC_ADDRESS in .env}
         ipv4_address: ${EDGE_IPV4_ADDRESS:?Set EDGE_IPV4_ADDRESS in .env}
         ipv6_address: ${EDGE_IPV6_ADDRESS:?Set EDGE_IPV6_ADDRESS in .env}
     logging:

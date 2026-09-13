@@ -17,6 +17,13 @@ PORT_DEFAULTS = {'LUCI_HTTP_PORT': '80', 'LUCI_HTTPS_PORT': '443', 'SSH_PORT': '
 def validate_network(config, resolved):
     edge = config['networks']['edge']
     assert edge['enable_ipv6'] is True, 'edge must support IPv6'
+    endpoint = config['services']['openwrt']['networks']['edge']
+    mac = resolved['EDGE_MAC_ADDRESS']
+    assert re.fullmatch(r'(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}', mac), 'EDGE_MAC_ADDRESS must contain six hex octets'
+    octets = bytes.fromhex(mac.replace(':', ''))
+    assert any(octets) and not octets[0] & 1, 'EDGE_MAC_ADDRESS must be a nonzero unicast address'
+    assert endpoint.get('mac_address', '').lower() == mac.lower(), 'EDGE_MAC_ADDRESS interpolation mismatch'
+    assert 'mac_address' not in config['services']['openwrt'], 'MAC must be configured on the network endpoint'
     entries = edge['ipam']['config']
     assert len(entries) == 2, 'edge must have exactly one subnet per address family'
     for version in (4, 6):
@@ -45,9 +52,12 @@ def validate_network(config, resolved):
 
 def validate_config(config, resolved):
     service = config['services']['openwrt']
-    for key in ('LAND_ROOT_PASSWORD', 'TZ', 'LAND_DNS_ADDR', 'LAND_REDIRECT_LOG_LEVEL'):
+    for key in ('LAND_ROOT_PASSWORD', 'TZ', 'LAND_DNS_ADDR'):
         # Compose escapes dollars when serializing a reusable Compose document.
         assert service['environment'][key] == resolved[key].replace('$', '$$'), f'{key} interpolation mismatch'
+    level = resolved.get('LAND_REDIRECT_LOG_LEVEL') or 'ERROR'
+    assert level in ('OFF', 'ERROR', 'WARN', 'INFO', 'DEBUG', 'TRACE'), 'invalid handler log level'
+    assert service['environment']['LAND_REDIRECT_LOG_LEVEL'] == level, 'handler log level interpolation mismatch'
     assert 'ports' not in service and 'expose' not in service, 'native listeners must not be published'
     assert 'LAN_BIND_IP' not in service['environment'], 'host address binding must not return'
     for key, default in PORT_DEFAULTS.items():
@@ -104,6 +114,8 @@ def main():
     for password in ('1', '123', 'simple', 'value$with# spaces'):
         check_case(source, {'LAND_ROOT_PASSWORD': password})
     check_case(source, {'LAND_ROOT_PASSWORD': 'test-only', **dict.fromkeys(PORT_DEFAULTS, '')})
+    for level in ('', 'OFF', 'ERROR', 'WARN', 'INFO', 'DEBUG', 'TRACE'):
+        check_case(source, {'LAND_ROOT_PASSWORD': 'test-only', 'LAND_REDIRECT_LOG_LEVEL': level})
     for index, prefix in enumerate(('10.66.66', '172.30.66', '192.168.66'), 1):
         check_case(source, {
             'LAND_ROOT_PASSWORD': 'test$with# spaces',
@@ -113,6 +125,7 @@ def main():
             'EDGE_IPV6_SUBNET': f'fd66:{index}::/64',
             'EDGE_IPV6_GATEWAY': f'fd66:{index}::1',
             'EDGE_IPV6_ADDRESS': f'fd66:{index}::2',
+            'EDGE_MAC_ADDRESS': f'02:AA:BB:CC:DD:{index:02X}',
             'EDGE_BRIDGE_NAME': f'br-ci-{index}',
             'EDGE_NETWORK_NAME': f'ci-network-{index}',
             'CONFIG_VOLUME_NAME': f'ci-config-{index}',
@@ -125,7 +138,7 @@ def main():
             'LUCI_HTTPS_PORT': '18443',
             'SSH_PORT': '12222',
         })
-    print('PASS: dotenv passwords, configurable dual-stack networks and volumes, native listeners and preserved NAT')
+    print('PASS: dotenv passwords, ERROR/OFF handler logging, fixed endpoint MAC, configurable dual-stack networks and volumes, native listeners and preserved NAT')
 
 
 if __name__ == '__main__':

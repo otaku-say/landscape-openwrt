@@ -90,6 +90,7 @@ start_container() {
         --ip 172.30.80.2 --ip6 fd70:6c61:6e64:80::2 \
         --label ld_flow_edge=true --ulimit memlock=-1:-1 \
         -e LAND_DNS_ADDR -e LAND_ROOT_PASSWORD -e TZ \
+        -e LAND_REDIRECT_LOG_LEVEL="${LAND_REDIRECT_LOG_LEVEL:-ERROR}" \
         -e LUCI_HTTP_PORT -e LUCI_HTTPS_PORT -e SSH_PORT \
         --sysctl net.ipv4.conf.lo.accept_local=1 \
         --sysctl net.ipv6.conf.all.disable_ipv6=0 \
@@ -117,6 +118,7 @@ python3 scripts/test-console.py check "$socket_dir"
 docker start "$name"
 wait_healthy
 python3 scripts/test-console.py check "$socket_dir" "$name"
+docker exec -i "$name" sh -s -- ERROR < scripts/smoke-redirect-logging.sh
 docker exec -i "$name" sh -s -- --fresh < scripts/smoke-dns.sh
 [[ -z $(docker port "$name") ]]
 "$python" scripts/test-management.py '172.30.80.2,fd70:6c61:6e64:80::2' "$LUCI_HTTP_PORT" "$LUCI_HTTPS_PORT" "$SSH_PORT"
@@ -182,8 +184,10 @@ LUCI_HTTPS_PORT=18443
 SSH_PORT=12222
 # Switching to IPv6-only proves recreation replaces, rather than appends, interface DNS.
 LAND_DNS_ADDR=fd70:6c61:6e64:80::1
+LAND_REDIRECT_LOG_LEVEL=OFF
 start_container
 wait_healthy
+docker exec -i "$name" sh -s -- OFF < scripts/smoke-redirect-logging.sh
 python3 scripts/test-console.py check "$socket_dir" "$name"
 [[ $(docker exec "$name" uci get 'dhcp.@dnsmasq[0].server') == /retained.example.net/172.30.80.1 ]]
 docker exec -i "$name" sh -s -- --interface < scripts/smoke-dns.sh

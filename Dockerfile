@@ -51,7 +51,7 @@ RUN set -eu; \
 ENV PATH=/usr/sbin:/usr/bin:/sbin:/bin \
     TZ=Asia/Shanghai \
     LAND_DNS_ADDR=8.8.8.8 \
-    LAND_REDIRECT_LOG_LEVEL=INFO \
+    LAND_REDIRECT_LOG_LEVEL=ERROR \
     LUCI_HTTP_PORT=80 \
     LUCI_HTTPS_PORT=443 \
     SSH_PORT=22

@@ -8,14 +8,21 @@ start_service() {
         logger -t landscape-redirect 'Network preparation failed; refusing to register this exit.'
         return 1
     }
-    local level
-    level="$(uci -q get landscape.container.log_level)"
+    local level capture=1
+    level="$(uci -q get landscape.container.log_level || true)"
+    level=${level:-ERROR}
+    case "$level" in
+        OFF) capture=0 ;;
+        ERROR|WARN|INFO|DEBUG|TRACE) ;;
+        *) logger -p daemon.err -t landscape-redirect 'Invalid log level; refusing to start.'; return 1 ;;
+    esac
     procd_open_instance
     procd_set_param command /usr/bin/redirect_pkg_handler --mode route \
-        --sock_path /ld_unix_link --log-level "${level:-INFO}"
+        --sock_path /ld_unix_link --log-level "$level"
     procd_set_param respawn 3600 5 0
-    procd_set_param stdout 1
-    procd_set_param stderr 1
+    # The handler writes tracing errors to stdout; OFF also silences unfiltered stderr.
+    procd_set_param stdout "$capture"
+    procd_set_param stderr "$capture"
     procd_set_param limits memlock="unlimited unlimited"
     procd_close_instance
 }
