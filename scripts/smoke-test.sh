@@ -101,7 +101,14 @@ start_container() {
 wait_healthy() {
     local deadline=$((SECONDS + 180))
     while (( SECONDS < deadline )); do
-        if timeout 8 docker exec "$name" /usr/libexec/landscape-healthcheck; then return; fi
+        # netifd can report healthy before the static IPv6 address completes DAD.
+        # Start DNS probes only after the configured source address is usable.
+        if timeout 8 docker exec "$name" /usr/libexec/landscape-healthcheck &&
+            timeout 8 docker exec "$name" ip -6 -o address show dev eth0 |
+                grep -F 'inet6 fd70:6c61:6e64:80::2/64 ' |
+                grep -qvE 'tentative|dadfailed'; then
+            return
+        fi
         [[ $(docker inspect -f '{{.State.Running}}' "$name") == true ]]
         sleep 2
     done
