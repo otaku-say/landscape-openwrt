@@ -120,7 +120,6 @@ jobs:
           handler='${{ steps.vars.outputs.handler_version }}'
           suffix="${PLATFORM#linux\/}"
           cat > /tmp/tags.txt <<EOF
-          ${IMAGE}:latest-${suffix}
           ${IMAGE}:immortalwrt-${version}-${suffix}
           ${IMAGE}:passwall-${passwall}-${suffix}
           ${IMAGE}:redirect_pkg_handler-${handler}-${suffix}
@@ -226,8 +225,8 @@ jobs:
           for tag in "immortalwrt-$version" "passwall-$passwall" "redirect_pkg_handler-$handler" "immortalwrt-$version-passwall-$passwall" latest; do
             docker buildx imagetools create \
               --tag "$IMAGE:$tag" \
-              "$IMAGE:$tag-amd64" \
-              "$IMAGE:$tag-arm64"
+              "$IMAGE:immortalwrt-${version}-amd64" \
+              "$IMAGE:immortalwrt-${version}-arm64"
           done
           {
             echo '## Published tested multi-arch image'
