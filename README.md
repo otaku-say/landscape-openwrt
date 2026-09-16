@@ -2,7 +2,7 @@
 
 [![Build](https://github.com/otaku-say/landscape-openwrt/actions/workflows/build.yml/badge.svg)](https://github.com/otaku-say/landscape-openwrt/actions/workflows/build.yml)
 
-作为 **Landscape Flow 的双栈透明代理出口**：官方接应程序将标记流量交给 ImmortalWrt，由 PassWall 按节点和分流策略代理。采用最新正式版官方 x86_64 rootfs、PassWall 官方 APK 和简体中文包，保留完整代理依赖。仅 `linux/amd64`，可按 `.env` 部署到不同网络，不内置某个家庭 LAN、WAN 或运营商前缀。
+作为 **Landscape Flow 的双栈透明代理出口**：官方接应程序将标记流量交给 ImmortalWrt，由 PassWall 按节点和分流策略代理。采用最新正式版官方 x86_64 与 aarch64 rootfs、PassWall 官方 APK 和简体中文包，保留完整代理依赖。支持 `linux/amd64` 与 `linux/arm64` 双架构，可按 `.env` 部署到不同网络，不内置某个家庭 LAN、WAN 或运营商前缀。
 
 镜像：`ghcr.io/otaku-say/landscape-openwrt:latest`。
 
@@ -202,7 +202,7 @@ PassWall 订阅、节点和 ACL 保存在配置卷；`network`、`uhttpd`、`dro
 - 系统：[ImmortalWrt 正式 tag](https://github.com/immortalwrt/immortalwrt/tags)，排除 RC，官方 rootfs 核验官方 SHA256。
 - PassWall：[官方 Release](https://github.com/Openwrt-Passwall/openwrt-passwall/releases) 的 `25.12+` APK 与简体中文 APK，核验 GitHub 资产 SHA256，并检查版本匹配。
 - 系统 APK 源：**https://mirrors.ustc.edu.cn/immortalwrt**，保持官方包签名验证。
-- 专用依赖源：官方 Release 推荐的 [openwrt-passwall-build](https://github.com/moetayuko/openwrt-passwall-build) `25.12/x86_64/passwall_packages`，验证固定公钥、索引签名和解析版本。
+- 专用依赖源：官方 Release 推荐的 [openwrt-passwall-build](https://github.com/moetayuko/openwrt-passwall-build) `25.12/x86_64` 与 `25.12/aarch64_generic` 的 `passwall_packages`，验证固定公钥、索引签名和解析版本。
 - 完整代理核心：GeoView、ChinaDNS-NG、Xray、sing-box、Hysteria、NaiveProxy、Shadow-TLS、Shadowsocks Rust、SSR、simple-obfs、v2ray-plugin、xray-plugin、GeoIP/GeoSite、DNS/透明代理工具和 HAProxy。清单见 `scripts/passwall-packages.txt`。
 - 不安装 HomeProxy、OpenClash、Momo、PassWall2、ttyd；保留 LuCI、SSH 和必要系统组件，移除固件升级与硬件管理工具。
 

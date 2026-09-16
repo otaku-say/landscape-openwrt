@@ -30,9 +30,10 @@ env:
   IMAGE: ghcr.io/otaku-say/landscape-openwrt
 
 jobs:
-  build:
+  check:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    outputs:
+      build: ${{ steps.inputs.outputs.build }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -61,8 +62,83 @@ jobs:
           if [[ "$FORCE" == true ]]; then args+=(--force); fi
           if [[ "$FIRST" == true ]]; then args+=(--first-build); fi
           python3 scripts/upstreams.py --image "$IMAGE" "${args[@]}"
-      - name: Build candidate, without publishing
+      - name: Upload resolved build inputs
         if: steps.inputs.outputs.build == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-inputs
+          path: build/
+          retention-days: 1
+      - name: Unchanged inputs
+        if: steps.inputs.outputs.build != 'true'
+        run: echo 'Stable ImmortalWrt rootfs, PassWall APK pair, handler and source are unchanged; no rebuild.' >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+            test: true
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            test: false
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: build-inputs
+          path: build/
+      - name: Load inputs for build-args
+        id: vars
+        run: |
+          python3 - << 'PYEOF'
+          import json
+          import os
+          state = json.load(open('build/upstream.json'))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              for key, value in state.items():
+                  if key != 'arches' and isinstance(value, str):
+                      f.write(f'{key}={value}\n')
+              for arch, meta in state['arches'].items():
+                  for key, value in meta.items():
+                      if isinstance(value, str):
+                          f.write(f'{key}_{arch}={value}\n')
+          PYEOF
+      - name: Generate per-arch tags
+        id: tags
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          version='${{ steps.vars.outputs.immortalwrt_version }}'
+          passwall='${{ steps.vars.outputs.passwall_version }}'
+          handler='${{ steps.vars.outputs.handler_version }}'
+          suffix="${PLATFORM#linux\/}"
+          cat > /tmp/tags.txt <<EOF
+          ${IMAGE}:latest-${suffix}
+          ${IMAGE}:immortalwrt-${version}-${suffix}
+          ${IMAGE}:passwall-${passwall}-${suffix}
+          ${IMAGE}:redirect_pkg_handler-${handler}-${suffix}
+          ${IMAGE}:immortalwrt-${version}-passwall-${passwall}-${suffix}
+          EOF
+          {
+            echo 'tags<<TAGSEOF'
+            cat /tmp/tags.txt
+            echo 'TAGSEOF'
+          } >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build amd64 candidate for testing
+        if: matrix.test
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -72,58 +148,94 @@ jobs:
           tags: landscape-openwrt:test
           provenance: false
           build-args: |
-            IMMORTALWRT_VERSION=${{ steps.inputs.outputs.immortalwrt_version }}
-            ROOTFS_SHA256=${{ steps.inputs.outputs.rootfs_sha256 }}
-            PASSWALL_VERSION=${{ steps.inputs.outputs.passwall_version }}
-            INPUTS_DIGEST=${{ steps.inputs.outputs.inputs_digest }}
-            HANDLER_VERSION=${{ steps.inputs.outputs.handler_version }}
-            HANDLER_SHA256=${{ steps.inputs.outputs.handler_sha256 }}
-            SOURCE_REVISION=${{ steps.inputs.outputs.source_revision }}
-            BUILD_DATE=${{ steps.inputs.outputs.resolved_at }}
+            IMMORTALWRT_VERSION=${{ steps.vars.outputs.immortalwrt_version }}
+            ROOTFS_SHA256_AMD64=${{ steps.vars.outputs.rootfs_sha256_amd64 }}
+            ROOTFS_SHA256_ARM64=${{ steps.vars.outputs.rootfs_sha256_arm64 }}
+            PASSWALL_VERSION=${{ steps.vars.outputs.passwall_version }}
+            INPUTS_DIGEST=${{ steps.vars.outputs.inputs_digest }}
+            HANDLER_VERSION=${{ steps.vars.outputs.handler_version }}
+            HANDLER_SHA256_AMD64=${{ steps.vars.outputs.handler_sha256_amd64 }}
+            HANDLER_SHA256_ARM64=${{ steps.vars.outputs.handler_sha256_arm64 }}
+            SOURCE_REVISION=${{ steps.vars.outputs.source_revision }}
+            BUILD_DATE=${{ steps.vars.outputs.resolved_at }}
+            DEPENDENCY_FEED_SHA256_AMD64=${{ steps.vars.outputs.dependency_feed_sha256_amd64 }}
+            DEPENDENCY_FEED_SHA256_ARM64=${{ steps.vars.outputs.dependency_feed_sha256_arm64 }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Install isolated network test dependencies
-        if: steps.inputs.outputs.build == 'true'
+        if: matrix.test
         run: |
           python3 -m venv build/test-venv
           build/test-venv/bin/pip install -r tests/requirements.txt
       - name: Boot and test actual OpenWrt candidate
-        if: steps.inputs.outputs.build == 'true'
+        if: matrix.test
         timeout-minutes: 12
         run: bash scripts/smoke-test.sh landscape-openwrt:test
-      - name: Publish only the tested image
-        if: steps.inputs.outputs.build == 'true'
-        env:
-          HANDLER: ${{ steps.inputs.outputs.handler_version }}
-          PASSWALL: ${{ steps.inputs.outputs.passwall_version }}
-        run: |
-          version=$(docker run --rm --entrypoint /bin/sh landscape-openwrt:test -c '. /etc/openwrt_release; printf "%s" "$DISTRIB_RELEASE"')
-          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          # Update latest last; failed earlier pushes cannot advance the comparison state.
-          for tag in "immortalwrt-$version" "passwall-$PASSWALL" "redirect_pkg_handler-$HANDLER" "immortalwrt-$version-passwall-$PASSWALL" latest; do
-            docker tag landscape-openwrt:test "$IMAGE:$tag"
-            docker push "$IMAGE:$tag"
-          done
-          {
-            echo '## Published tested image'
-            echo "\`$IMAGE:latest\`"
-            echo "ImmortalWrt: $version; PassWall: $PASSWALL; redirect_pkg_handler: $HANDLER"
-            echo 'Tests cover host-console isolation across boot/restart/recreation/shutdown, tagged official-handler traffic through real PassWall TCP/UDP proxy exits over IPv4/IPv6, preserved outbound NAT, native management, passwords, SSH identity, DNS and SLAAC renewal.'
-            echo 'A real Landscape Flow and an external proxy subscription still require deployment acceptance.'
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: Unchanged inputs
-        if: steps.inputs.outputs.build != 'true'
-        run: echo 'Stable ImmortalWrt rootfs, PassWall APK pair, handler and source are unchanged; no rebuild.' >> "$GITHUB_STEP_SUMMARY"
-      - name: Preserve build metadata and test diagnostics
-        if: always()
+      - name: Publish per-arch tags
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          push: true
+          provenance: false
+          tags: ${{ steps.tags.outputs.tags }}
+          build-args: |
+            IMMORTALWRT_VERSION=${{ steps.vars.outputs.immortalwrt_version }}
+            ROOTFS_SHA256_AMD64=${{ steps.vars.outputs.rootfs_sha256_amd64 }}
+            ROOTFS_SHA256_ARM64=${{ steps.vars.outputs.rootfs_sha256_arm64 }}
+            PASSWALL_VERSION=${{ steps.vars.outputs.passwall_version }}
+            INPUTS_DIGEST=${{ steps.vars.outputs.inputs_digest }}
+            HANDLER_VERSION=${{ steps.vars.outputs.handler_version }}
+            HANDLER_SHA256_AMD64=${{ steps.vars.outputs.handler_sha256_amd64 }}
+            HANDLER_SHA256_ARM64=${{ steps.vars.outputs.handler_sha256_arm64 }}
+            SOURCE_REVISION=${{ steps.vars.outputs.source_revision }}
+            BUILD_DATE=${{ steps.vars.outputs.resolved_at }}
+            DEPENDENCY_FEED_SHA256_AMD64=${{ steps.vars.outputs.dependency_feed_sha256_amd64 }}
+            DEPENDENCY_FEED_SHA256_ARM64=${{ steps.vars.outputs.dependency_feed_sha256_arm64 }}
+          cache-from: type=gha
+      - name: Preserve test diagnostics
+        if: matrix.test && always()
         uses: actions/upload-artifact@v4
         with:
           name: build-diagnostics
           path: |
-            build/upstream.json
             build/smoke-*.log
           if-no-files-found: ignore
           retention-days: 30
+
+  manifest:
+    needs: [check, build]
+    runs-on: ubuntu-24.04
+    if: needs.check.outputs.build == 'true'
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: build-inputs
+          path: build/
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create and push multi-arch manifests
+        run: |
+          version=$(jq -r '.immortalwrt_version' build/upstream.json)
+          passwall=$(jq -r '.passwall_version' build/upstream.json)
+          handler=$(jq -r '.handler_version' build/upstream.json)
+          # Push versioned tags first, then latest last.
+          for tag in "immortalwrt-$version" "passwall-$passwall" "redirect_pkg_handler-$handler" "immortalwrt-$version-passwall-$passwall" latest; do
+            docker buildx imagetools create \
+              --tag "$IMAGE:$tag" \
+              "$IMAGE:$tag-amd64" \
+              "$IMAGE:$tag-arm64"
+          done
+          {
+            echo '## Published tested multi-arch image'
+            echo "\`$IMAGE:latest\` (linux/amd64, linux/arm64)"
+            echo "ImmortalWrt: $version; PassWall: $passwall; redirect_pkg_handler: $handler"
+            echo 'Tests cover host-console isolation across boot/restart/recreation/shutdown, tagged official-handler traffic through real PassWall TCP/UDP proxy exits over IPv4/IPv6, preserved outbound NAT, native management, passwords, SSH identity, DNS and SLAAC renewal.'
+            echo 'A real Landscape Flow and an external proxy subscription still require deployment acceptance.'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Keep daily checks active in an otherwise idle public repository
         if: github.event_name == 'schedule'
         run: bash scripts/keepalive.sh
