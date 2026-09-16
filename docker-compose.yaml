@@ -2,7 +2,6 @@ services:
   openwrt:
     image: ${OPENWRT_IMAGE:?Set OPENWRT_IMAGE in .env}
     container_name: ${CONTAINER_NAME:?Set CONTAINER_NAME in .env}
-    platform: linux/amd64
     restart: ${RESTART_POLICY:?Set RESTART_POLICY in .env}
     privileged: true
     # 接应运行条件固定：单网桥、cgroup v2、/sbin/init 为 PID 1，不能加 init: true。

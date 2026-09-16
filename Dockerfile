@@ -1,37 +1,47 @@
 # syntax=docker/dockerfile:1
 FROM scratch AS prepared
-ADD build/rootfs.tar.gz /
+ARG TARGETARCH
+ADD build/${TARGETARCH}/rootfs.tar.gz /
 ENV PATH=/usr/sbin:/usr/bin:/sbin:/bin
-COPY build/passwall.apk build/passwall-zh.apk /tmp/packages/
-COPY build/install-inputs.json /usr/share/landscape-openwrt/install-inputs.json
+COPY build/shared/passwall.apk build/shared/passwall-zh.apk /tmp/packages/
+COPY build/${TARGETARCH}/install-inputs.json /usr/share/landscape-openwrt/install-inputs.json
 COPY scripts/install-packages.sh scripts/passwall-packages.txt /tmp/
-COPY build/packages.adb /tmp/passwall-feed.adb
-COPY build/passwall-build.pem /etc/apk/keys/openwrt-passwall-build.pem
+COPY build/${TARGETARCH}/packages.adb /tmp/passwall-feed.adb
+COPY build/shared/passwall-build.pem /etc/apk/keys/openwrt-passwall-build.pem
 RUN /bin/sh /tmp/install-packages.sh
 
 # Keep package downloads and removed hardware helpers out of the final layers.
 FROM scratch
 COPY --from=prepared / /
+ARG TARGETARCH
 ARG IMMORTALWRT_VERSION
-ARG ROOTFS_SHA256
+ARG ROOTFS_SHA256_AMD64
+ARG ROOTFS_SHA256_ARM64
 ARG PASSWALL_VERSION
 ARG INPUTS_DIGEST
 ARG HANDLER_VERSION
-ARG HANDLER_SHA256
+ARG HANDLER_SHA256_AMD64
+ARG HANDLER_SHA256_ARM64
 ARG SOURCE_REVISION
 ARG BUILD_DATE
+ARG DEPENDENCY_FEED_SHA256_AMD64
+ARG DEPENDENCY_FEED_SHA256_ARM64
 LABEL org.opencontainers.image.title="Landscape ImmortalWrt PassWall" \
       org.opencontainers.image.description="Official ImmortalWrt rootfs, official PassWall APK, full proxy dependencies and Landscape route-mode handler" \
       org.opencontainers.image.source="https://github.com/otaku-say/landscape-openwrt" \
       org.opencontainers.image.revision="${SOURCE_REVISION}" \
       org.opencontainers.image.created="${BUILD_DATE}" \
       dev.landscape.immortalwrt.version="${IMMORTALWRT_VERSION}" \
-      dev.landscape.rootfs.sha256="${ROOTFS_SHA256}" \
+      dev.landscape.rootfs.sha256.linux-amd64="${ROOTFS_SHA256_AMD64}" \
+      dev.landscape.rootfs.sha256.linux-arm64="${ROOTFS_SHA256_ARM64}" \
       dev.landscape.passwall.version="${PASSWALL_VERSION}" \
       dev.landscape.inputs.digest="${INPUTS_DIGEST}" \
       dev.landscape.handler.version="${HANDLER_VERSION}" \
-      dev.landscape.handler.sha256="${HANDLER_SHA256}"
-COPY build/redirect_pkg_handler /usr/bin/redirect_pkg_handler
+      dev.landscape.handler.sha256.linux-amd64="${HANDLER_SHA256_AMD64}" \
+      dev.landscape.handler.sha256.linux-arm64="${HANDLER_SHA256_ARM64}" \
+      dev.landscape.dependency_feed.sha256.linux-amd64="${DEPENDENCY_FEED_SHA256_AMD64}" \
+      dev.landscape.dependency_feed.sha256.linux-arm64="${DEPENDENCY_FEED_SHA256_ARM64}"
+COPY build/${TARGETARCH}/redirect_pkg_handler /usr/bin/redirect_pkg_handler
 COPY build/upstream.json /usr/share/landscape-openwrt/upstream.json
 COPY start.sh /usr/bin/landscape-start
 COPY rootfs/ /
@@ -41,7 +51,12 @@ RUN set -eu; \
     mkdir -p /var/lock; \
     chmod 0755 /etc/preinit /usr/bin/redirect_pkg_handler /usr/bin/landscape-start \
       /usr/libexec/landscape-* /etc/init.d/landscape-* /etc/hotplug.d/iface/99-landscape-ipv6; \
-    printf '%s  %s\n' "$HANDLER_SHA256" /usr/bin/redirect_pkg_handler | sha256sum -c -; \
+    case "$TARGETARCH" in \
+      amd64) expected="$HANDLER_SHA256_AMD64" ;; \
+      arm64) expected="$HANDLER_SHA256_ARM64" ;; \
+      *) echo "Unsupported architecture: $TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    printf '%s  %s\n' "$expected" /usr/bin/redirect_pkg_handler | sha256sum -c -; \
     /usr/bin/redirect_pkg_handler --help >/dev/null; \
     /etc/init.d/landscape-prepare enable; \
     /etc/init.d/landscape-redirect enable; \
