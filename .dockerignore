@@ -6,11 +6,10 @@ tests
 __pycache__
 **/__pycache__
 build/*
-!build/redirect_pkg_handler
 !build/upstream.json
-!build/install-inputs.json
-!build/rootfs.tar.gz
-!build/passwall.apk
-!build/passwall-zh.apk
-!build/packages.adb
-!build/passwall-build.pem
+!build/shared
+!build/shared/**
+!build/amd64
+!build/amd64/**
+!build/arm64
+!build/arm64/**
