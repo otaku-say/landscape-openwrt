@@ -35,7 +35,7 @@ jobs:
     outputs:
       build: ${{ steps.inputs.outputs.build }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Validate source
@@ -64,7 +64,7 @@ jobs:
           python3 scripts/upstreams.py --image "$IMAGE" "${args[@]}"
       - name: Upload resolved build inputs
         if: steps.inputs.outputs.build == 'true'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: build-inputs
           path: build/
@@ -89,8 +89,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v6
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
         with:
           name: build-inputs
           path: build/
@@ -194,7 +194,7 @@ jobs:
           cache-from: type=gha
       - name: Preserve test diagnostics
         if: matrix.test && always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: build-diagnostics
           path: |
@@ -207,10 +207,10 @@ jobs:
     runs-on: ubuntu-24.04
     if: needs.check.outputs.build == 'true'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v7
         with:
           name: build-inputs
           path: build/
