@@ -35,7 +35,7 @@ jobs:
     outputs:
       build: ${{ steps.inputs.outputs.build }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Validate source
@@ -45,8 +45,8 @@ jobs:
           shellcheck -S warning -s ash -e SC2034 rootfs/etc/init.d/*
           docker compose --env-file .env.example -f docker-compose.yaml config --quiet
           python3 scripts/test-compose.py
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -64,7 +64,7 @@ jobs:
           python3 scripts/upstreams.py --image "$IMAGE" "${args[@]}"
       - name: Upload resolved build inputs
         if: steps.inputs.outputs.build == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: build-inputs
           path: build/
@@ -89,8 +89,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v6
         with:
           name: build-inputs
           path: build/
@@ -130,15 +130,15 @@ jobs:
             cat /tmp/tags.txt
             echo 'TAGSEOF'
           } >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build amd64 candidate for testing
         if: matrix.test
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64
@@ -171,7 +171,7 @@ jobs:
         timeout-minutes: 12
         run: bash scripts/smoke-test.sh landscape-openwrt:test
       - name: Publish per-arch tags
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: ${{ matrix.platform }}
@@ -194,7 +194,7 @@ jobs:
           cache-from: type=gha
       - name: Preserve test diagnostics
         if: matrix.test && always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: build-diagnostics
           path: |
@@ -207,11 +207,14 @@ jobs:
     runs-on: ubuntu-24.04
     if: needs.check.outputs.build == 'true'
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v6
         with:
           name: build-inputs
           path: build/
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
