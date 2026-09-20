@@ -116,7 +116,7 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
         run: |
           version='${{ steps.vars.outputs.immortalwrt_version }}'
-          passwall='${{ steps.vars.outputs.passwall_version }}'
+          passwall='${{ steps.vars.outputs.passwall_release }}'
           handler='${{ steps.vars.outputs.handler_version }}'
           suffix="${PLATFORM#linux\/}"
           {
@@ -221,7 +221,7 @@ jobs:
       - name: Create and push multi-arch manifests
         run: |
           version=$(jq -r '.immortalwrt_version' build/upstream.json)
-          passwall=$(jq -r '.passwall_version' build/upstream.json)
+          passwall=$(jq -r '.passwall_release' build/upstream.json)
           handler=$(jq -r '.handler_version' build/upstream.json)
           amd64="${IMAGE}:immortalwrt-${version}-amd64"
           arm64="${IMAGE}:immortalwrt-${version}-arm64"
@@ -278,10 +278,9 @@ jobs:
         if: success()
         run: |
           version=$(jq -r '.immortalwrt_version' build/upstream.json)
-          passwall=$(jq -r '.passwall_version' build/upstream.json)
-          passwall_release=$(jq -r '.passwall_release' build/upstream.json)
+          passwall=$(jq -r '.passwall_release' build/upstream.json)
           handler=$(jq -r '.handler_version' build/upstream.json)
-          export IW_TAG="$version" PW_TAG="$passwall_release" PW_VER="$passwall" LW_TAG="$handler"
+          export IW_TAG="$version" PW_TAG="$passwall" LW_TAG="$handler"
           python3 - << 'PYEOF'
           import urllib.request, urllib.error, json, os
           headers = {"Accept": "application/vnd.github+json",
