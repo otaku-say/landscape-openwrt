@@ -68,6 +68,11 @@ uci set 'firewall.@defaults[0].fullcone6=0'
 # SYN-flood limiting targets the wan zone, which has no interface in a
 # container; keep it off like the other container-inappropriate defaults.
 uci set 'firewall.@defaults[0].syn_flood=0'
+# Container policy: accept by default. Access control lives in the explicit
+# management rules below, not in the zone defaults.
+uci set 'firewall.@defaults[0].input=ACCEPT'
+uci set 'firewall.@defaults[0].output=ACCEPT'
+uci set 'firewall.@defaults[0].forward=ACCEPT'
 uci commit firewall
 
 stop_dhcp() {
