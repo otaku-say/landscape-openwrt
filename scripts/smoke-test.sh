@@ -133,7 +133,7 @@ key_before=$(docker exec "$name" sha256sum /etc/dropbear/dropbear_ed25519_host_k
 for _ in {1..40}; do [[ ! -s "$socket_dir/enrollment.json" ]] || break; sleep 2; done
 id=$(docker inspect -f '{{.Id}}' "$name")
 python3 -c 'import json,sys; v=json.load(open(sys.argv[1])); assert sys.argv[2].startswith(v["id"]); assert v["ifindex"]>0' "$socket_dir/enrollment.json" "$id"
-docker exec "$name" sh -ec '! pidof odhcpd; test "$(uci get dhcp.lan.ignore)" = 1; test "$(uci get firewall.@defaults[0].flow_offloading)" = 0; test "$(uci get firewall.@defaults[0].syn_flood)" = 0; test "$(uci get firewall.@defaults[0].input)" = ACCEPT; test "$(uci get firewall.@defaults[0].output)" = ACCEPT; test "$(uci get firewall.@defaults[0].forward)" = ACCEPT'
+docker exec "$name" sh -ec '! pidof odhcpd; test "$(uci get dhcp.lan.ignore)" = 1; test "$(uci get firewall.@defaults[0].flow_offloading)" = 0; test "$(uci get firewall.@defaults[0].syn_flood)" = 0; test "$(uci get firewall.@defaults[0].input)" = ACCEPT; test "$(uci get firewall.@defaults[0].output)" = ACCEPT; test "$(uci get firewall.@defaults[0].forward)" = ACCEPT; test "$(uci get dhcp.@dnsmasq[0].rebind_protection)" = 0; test "$(uci get dhcp.@dnsmasq[0].localise_queries)" = 0; test -z "$(uci -q get dhcp.@dnsmasq[0].cachesize || true)"'
 docker exec "$name" nft list chain inet fw4 srcnat_lan | grep 'meta nfproto ipv4.*masquerade'
 docker exec "$name" nft list chain inet fw4 srcnat_lan | grep 'meta nfproto ipv6.*masquerade'
 
@@ -182,6 +182,10 @@ docker exec "$name" sh -ec '
   # User overrides of the image-baked firewall defaults must survive recreation.
   uci set firewall.@defaults[0].syn_flood=1
   uci set firewall.@defaults[0].input=REJECT
+  # User overrides of the image-baked DNS defaults must survive recreation.
+  uci set dhcp.@dnsmasq[0].rebind_protection=1
+  uci set dhcp.@dnsmasq[0].localise_queries=1
+  uci set dhcp.@dnsmasq[0].cachesize=8000
   uci commit
 '
 docker rm -f "$name"
@@ -205,6 +209,9 @@ echo 'PASS: IPv6-only interface DNS replaces the old list while custom forwardin
 [[ $(docker exec "$name" uci get landscape.test.value) == retained ]]
 [[ $(docker exec "$name" uci get firewall.@defaults[0].syn_flood) == 1 ]]
 [[ $(docker exec "$name" uci get firewall.@defaults[0].input) == REJECT ]]
+[[ $(docker exec "$name" uci get dhcp.@dnsmasq[0].rebind_protection) == 1 ]]
+[[ $(docker exec "$name" uci get dhcp.@dnsmasq[0].localise_queries) == 1 ]]
+[[ $(docker exec "$name" uci get dhcp.@dnsmasq[0].cachesize) == 8000 ]]
 echo 'PASS: image defaults accept by default; user overrides survive recreation'
 [[ $(docker exec "$name" sha256sum /etc/dropbear/dropbear_ed25519_host_key) == "$key_before" ]]
 "$python" scripts/test-management.py '172.30.80.2,fd70:6c61:6e64:80::2' "$LUCI_HTTP_PORT" "$LUCI_HTTPS_PORT" "$SSH_PORT"
