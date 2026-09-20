@@ -282,7 +282,7 @@ jobs:
           handler=$(jq -r '.handler_version' build/upstream.json)
           export IW_TAG="$version" PW_TAG="$passwall" LW_TAG="$handler"
           python3 - << 'PYEOF'
-          import urllib.request, urllib.error, json, os
+          import urllib.request, urllib.error, json, os, re
           headers = {"Accept": "application/vnd.github+json",
                      "User-Agent": "landscape-openwrt-ci"}
           token = os.environ.get('GH_TOKEN')
@@ -292,20 +292,47 @@ jobs:
               req = urllib.request.Request(url, headers=headers)
               with urllib.request.urlopen(req, timeout=30) as r:
                   return json.loads(r.read())
+          def immortalwrt_notes(version):
+              # ImmortalWrt 不发 GitHub Release；用相邻稳定 tag 之间的 commits 作为版本日志。
+              tag = f'v{version}'
+              tags = fetch('https://api.github.com/repos/immortalwrt/immortalwrt/tags?per_page=100')
+              stable = sorted(
+                  (t for t in tags if re.fullmatch(r'v\d+\.\d+\.\d+', t.get('name', ''))),
+                  key=lambda t: tuple(map(int, t['name'][1:].split('.'))), reverse=True)
+              prev = None
+              for i, t in enumerate(stable):
+                  if t['name'] == tag and i + 1 < len(stable):
+                      prev = stable[i + 1]['name']
+                      break
+              if not prev:
+                  return '_No previous stable tag found._'
+              try:
+                  cmp = fetch(f'https://api.github.com/repos/immortalwrt/immortalwrt/compare/{prev}...{tag}')
+              except urllib.error.HTTPError:
+                  return '_Commit comparison unavailable._'
+              commits = cmp.get('commits', [])
+              if not commits:
+                  return '_No commits between releases._'
+              lines = [f'Upstream commits ({prev} → {tag}):'] + [
+                  f'- {c["commit"]["message"].splitlines()[0]}' for c in commits[:20]
+              ]
+              if len(commits) > 20:
+                  lines.append(f'- …and {len(commits) - 20} more commits')
+              return '\n'.join(lines)
           entries = [
-              ('ImmortalWrt',       'immortalwrt/immortalwrt',               os.environ['IW_TAG']),
-              ('PassWall',          'Openwrt-Passwall/openwrt-passwall',      os.environ['PW_TAG']),
-              ('Landscape handler', 'ThisSeanZhang/landscape',               os.environ['LW_TAG']),
+              ('ImmortalWrt',       'immortalwrt/immortalwrt',          os.environ['IW_TAG'], immortalwrt_notes),
+              ('PassWall',          'Openwrt-Passwall/openwrt-passwall', os.environ['PW_TAG'], None),
+              ('Landscape handler', 'ThisSeanZhang/landscape',          os.environ['LW_TAG'], None),
           ]
           with open('build/release_notes.txt', 'w') as notes:
-              for label, repo, tag in entries:
+              for label, repo, tag, fallback in entries:
                   notes.write(f'## {label} `{tag}`\n\n')
                   try:
                       r = fetch(f'https://api.github.com/repos/{repo}/releases/tags/{tag}')
                       body = (r.get('body') or '').strip()
                       notes.write((body or '_No release notes provided._') + '\n')
                   except urllib.error.HTTPError:
-                      notes.write('_See upstream repository for details._\n')
+                      notes.write((fallback(tag) if fallback else '_See upstream repository for details._') + '\n')
                   notes.write('\n')
           PYEOF
           {
