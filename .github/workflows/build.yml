@@ -279,10 +279,11 @@ jobs:
         run: |
           version=$(jq -r '.immortalwrt_version' build/upstream.json)
           passwall=$(jq -r '.passwall_version' build/upstream.json)
+          passwall_release=$(jq -r '.passwall_release' build/upstream.json)
           handler=$(jq -r '.handler_version' build/upstream.json)
-          IW_VERSION="$version" PW_VERSION="$passwall" LW_VERSION="$handler" \
-            python3 - << 'PYEOF'
-          import urllib.request, urllib.error, json, os, sys
+          export IW_TAG="$version" PW_TAG="$passwall_release" PW_VER="$passwall" LW_TAG="$handler"
+          python3 - << 'PYEOF'
+          import urllib.request, urllib.error, json, os
           headers = {"Accept": "application/vnd.github+json",
                      "User-Agent": "landscape-openwrt-ci"}
           token = os.environ.get('GH_TOKEN')
@@ -292,19 +293,20 @@ jobs:
               req = urllib.request.Request(url, headers=headers)
               with urllib.request.urlopen(req, timeout=30) as r:
                   return json.loads(r.read())
+          entries = [
+              ('ImmortalWrt',       'immortalwrt/immortalwrt',               os.environ['IW_TAG']),
+              ('PassWall',          'Openwrt-Passwall/openwrt-passwall',      os.environ['PW_TAG']),
+              ('Landscape handler', 'ThisSeanZhang/landscape',               os.environ['LW_TAG']),
+          ]
           with open('build/release_notes.txt', 'w') as notes:
-              for label, repo, version in [
-                  ('ImmortalWrt',          'immortalwrt/immortalwrt',               os.environ['IW_VERSION']),
-                  ('PassWall',             'Openwrt-Passwall/openwrt-passwall',      os.environ['PW_VERSION']),
-                  ('Landscape handler',    'ThisSeanZhang/landscape',               os.environ['LW_VERSION']),
-              ]:
-                  notes.write(f'## {label} `{version}`\n\n')
+              for label, repo, tag in entries:
+                  notes.write(f'## {label} `{tag}`\n\n')
                   try:
-                      r = fetch(f'https://api.github.com/repos/{repo}/releases/tags/{version}')
+                      r = fetch(f'https://api.github.com/repos/{repo}/releases/tags/{tag}')
                       body = (r.get('body') or '').strip()
                       notes.write((body or '_No release notes provided._') + '\n')
                   except urllib.error.HTTPError:
-                      notes.write('_Release not found; see upstream repository for details._\n')
+                      notes.write('_See upstream repository for details._\n')
                   notes.write('\n')
           PYEOF
           {
