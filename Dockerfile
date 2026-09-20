@@ -47,7 +47,12 @@ COPY start.sh /usr/bin/landscape-start
 COPY rootfs/ /
 RUN set -eu; \
     test -x /sbin/init; test -x /sbin/procd; \
-    for binary in fw4 nft ip jsonfilter chpasswd validate_data xray sing-box hysteria geoview chinadns-ng; do command -v "$binary"; done; \
+    for binary in fw4 nft ip uci jsonfilter chpasswd validate_data xray sing-box hysteria geoview chinadns-ng; do command -v "$binary"; done; \
+    uci set 'firewall.@defaults[0].syn_flood=0'; \
+    uci set 'firewall.@defaults[0].input=ACCEPT'; \
+    uci set 'firewall.@defaults[0].output=ACCEPT'; \
+    uci set 'firewall.@defaults[0].forward=ACCEPT'; \
+    uci commit firewall; \
     mkdir -p /var/lock; \
     chmod 0755 /etc/preinit /usr/bin/redirect_pkg_handler /usr/bin/landscape-start \
       /usr/libexec/landscape-* /etc/init.d/landscape-* /etc/hotplug.d/iface/99-landscape-ipv6; \

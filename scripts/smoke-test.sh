@@ -179,6 +179,9 @@ docker exec "$name" sh -ec '
   uci set passwall.landscape_smoke=nodes
   uci set passwall.landscape_smoke.remarks=retained
   uci add_list "dhcp.@dnsmasq[0].server=/retained.example.net/172.30.80.1"
+  # User overrides of the image-baked firewall defaults must survive recreation.
+  uci set firewall.@defaults[0].syn_flood=1
+  uci set firewall.@defaults[0].input=REJECT
   uci commit
 '
 docker rm -f "$name"
@@ -200,6 +203,9 @@ python3 scripts/test-console.py check "$socket_dir" "$name"
 docker exec -i "$name" sh -s -- --interface < scripts/smoke-dns.sh
 echo 'PASS: IPv6-only interface DNS replaces the old list while custom forwarding survives recreation'
 [[ $(docker exec "$name" uci get landscape.test.value) == retained ]]
+[[ $(docker exec "$name" uci get firewall.@defaults[0].syn_flood) == 1 ]]
+[[ $(docker exec "$name" uci get firewall.@defaults[0].input) == REJECT ]]
+echo 'PASS: image defaults accept by default; user overrides survive recreation'
 [[ $(docker exec "$name" sha256sum /etc/dropbear/dropbear_ed25519_host_key) == "$key_before" ]]
 "$python" scripts/test-management.py '172.30.80.2,fd70:6c61:6e64:80::2' "$LUCI_HTTP_PORT" "$LUCI_HTTPS_PORT" "$SSH_PORT"
 "$python" scripts/smoke-login.py "$name"
