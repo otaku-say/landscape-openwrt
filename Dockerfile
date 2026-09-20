@@ -53,7 +53,6 @@ RUN set -eu; \
     uci set 'firewall.@defaults[0].output=ACCEPT'; \
     uci set 'firewall.@defaults[0].forward=ACCEPT'; \
     uci commit firewall; \
-    uci set 'dhcp.@dnsmasq[0].rebind_protection=0'; \
     uci set 'dhcp.@dnsmasq[0].localise_queries=0'; \
     uci -q delete 'dhcp.@dnsmasq[0].cachesize' || true; \
     uci commit dhcp; \
