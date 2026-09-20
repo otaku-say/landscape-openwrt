@@ -65,6 +65,9 @@ uci set 'firewall.@defaults[0].flow_offloading=0'
 uci set 'firewall.@defaults[0].flow_offloading_hw=0'
 uci set 'firewall.@defaults[0].fullcone=0'
 uci set 'firewall.@defaults[0].fullcone6=0'
+# SYN-flood limiting targets the wan zone, which has no interface in a
+# container; keep it off like the other container-inappropriate defaults.
+uci set 'firewall.@defaults[0].syn_flood=0'
 uci commit firewall
 
 stop_dhcp() {
