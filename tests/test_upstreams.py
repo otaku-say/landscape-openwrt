@@ -62,11 +62,23 @@ class InputsTest(unittest.TestCase):
         changed['inputs_digest'] = u.inputs_digest(changed)
         return changed
 
-    def test_passwall_and_every_input_change_rebuilds(self):
+    def test_monitored_upstream_change_rebuilds(self):
+        # 只有三个被监控上游的 tag 信号 + 自身源码修订会触发重建
         keys = [
-            'immortalwrt_version', 'immortalwrt_commit', 'passwall_release',
+            'immortalwrt_version', 'immortalwrt_commit',
+            'passwall_release', 'handler_version', 'source_revision',
+        ]
+        for key in keys:
+            with self.subTest(key=key):
+                changed = self._change_key(key, 'different')
+                self.assertFalse(u.same_inputs({'dev.landscape.inputs.digest': self.state['inputs_digest']}, changed))
+
+    def test_content_drift_does_not_rebuild(self):
+        # rootfs/APK/feed/key 的内容哈希漂移只影响下载完整性校验，不触发重建
+        # （回归：2026-09-20 因 packages.adb 内容更新引发的浪费构建）
+        keys = [
             'passwall_version', 'passwall_sha256', 'passwall_i18n_sha256',
-            'dependency_key_sha256', 'source_revision',
+            'dependency_key_sha256',
             'arches.amd64.rootfs_sha256', 'arches.amd64.dependency_feed_sha256',
             'arches.amd64.handler_sha256',
             'arches.arm64.rootfs_sha256', 'arches.arm64.dependency_feed_sha256',
@@ -75,7 +87,7 @@ class InputsTest(unittest.TestCase):
         for key in keys:
             with self.subTest(key=key):
                 changed = self._change_key(key, 'different')
-                self.assertFalse(u.same_inputs({'dev.landscape.inputs.digest': self.state['inputs_digest']}, changed))
+                self.assertTrue(u.same_inputs({'dev.landscape.inputs.digest': self.state['inputs_digest']}, changed))
 
     def test_resolve_time_does_not_trigger_rebuild(self):
         changed = dict(self.state, resolved_at='tomorrow')
@@ -87,6 +99,18 @@ class InputsTest(unittest.TestCase):
     def test_numeric_stable_tag_selection(self):
         tags = [{'name': t} for t in ['v25.12.2', 'v25.12.10', 'v26.0.0-rc1', 'v24.10.99']]
         self.assertEqual(u.latest_stable_tag(tags)['name'], 'v25.12.10')
+
+    def test_newest_passwall_tag(self):
+        tags = [{'name': t} for t in ['26.9.9-1', '26.9.16-1', '26.8.19-2', '26.8.19-1', 'not-a-version']]
+        self.assertEqual(u.newest_tag(tags, r'\d+\.\d+\.\d+-\d+')['name'], '26.9.16-1')
+
+    def test_newest_landscape_tag(self):
+        tags = [{'name': t} for t in ['v0.24.2', 'v0.24.3', 'v0.24.10', 'v0.25.0-rc1']]
+        self.assertEqual(u.newest_tag(tags, r'v\d+\.\d+\.\d+')['name'], 'v0.24.10')
+
+    def test_reject_missing_matching_tag(self):
+        with self.assertRaises(ValueError):
+            u.newest_tag([{'name': 'v0.25.0-rc1'}], r'v\d+\.\d+\.\d+')
 
     def test_reject_missing_stable_tag(self):
         with self.assertRaises(ValueError):

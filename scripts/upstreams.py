@@ -14,8 +14,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 IMMORTAL_TAGS_API = "https://api.github.com/repos/immortalwrt/immortalwrt/tags?per_page=100"
-PASSWALL_API = "https://api.github.com/repos/Openwrt-Passwall/openwrt-passwall/releases/latest"
-RELEASE_API = "https://api.github.com/repos/ThisSeanZhang/landscape/releases/latest"
+PASSWALL_TAGS_API = "https://api.github.com/repos/Openwrt-Passwall/openwrt-passwall/tags?per_page=100"
+LANDSCAPE_TAGS_API = "https://api.github.com/repos/ThisSeanZhang/landscape/tags?per_page=100"
+PASSWALL_RELEASE_TAGS_API = ("https://api.github.com/repos/Openwrt-Passwall/"
+                             "openwrt-passwall/releases/tags/{tag}")
+LANDSCAPE_RELEASE_TAGS_API = "https://api.github.com/repos/ThisSeanZhang/landscape/releases/tags/{tag}"
 DEPENDENCY_KEY_URL = "https://master.dl.sourceforge.net/project/openwrt-passwall-build/apk.pub"
 DEPENDENCY_KEY_SHA256 = "52802b143489214e13b78f96599a147a638205cc22d9dd6d71229504e38ddc00"
 ACCEPT = ", ".join([
@@ -125,6 +128,20 @@ def latest_stable_tag(tags):
     return max(stable, key=lambda t: tuple(map(int, t["name"][1:].split("."))))
 
 
+def newest_tag(tags, pattern):
+    """Newest tag matching ``pattern``, ranked by numeric version components.
+
+    Only tags from the three monitored upstreams decide a rebuild, so the
+    latest tag of each upstream is resolved here. ``pattern`` must be a full
+    match (``re.fullmatch``); ranking treats ``26.9.16-1`` and ``v0.24.3``
+    uniformly via their numeric parts.
+    """
+    matched = [t for t in tags if re.fullmatch(pattern, t["name"])]
+    if not matched:
+        raise ValueError(f"No tag matches {pattern}")
+    return max(matched, key=lambda t: tuple(map(int, re.split(r"[-.]", t["name"].lstrip("v")))))
+
+
 def stable_release(release):
     if release.get("draft") or release.get("prerelease"):
         raise ValueError("Only stable published releases are supported")
@@ -195,17 +212,19 @@ def resolve_arch_inputs(version, release, arch, meta):
 
 
 def inputs_digest(state):
+    """Digest of the monitored upstream version signals.
+
+    A rebuild is decided by the three monitored upstreams' latest tags
+    (ImmortalWrt, PassWall, landscape handler) plus this repository's own
+    integration-source revision. Content hashes (rootfs, APK, dependency
+    feed, signing key) are download-integrity checks only: they are verified
+    on every fetch but never trigger a build on their own.
+    """
     fields = (
         "immortalwrt_version", "immortalwrt_commit",
-        "passwall_release", "passwall_version", "passwall_sha256", "passwall_i18n_sha256",
-        "dependency_key_sha256", "source_revision"
+        "passwall_release", "handler_version", "source_revision",
     )
     base = {key: state[key] for key in fields}
-    base["arches"] = {
-        arch: {key: value for key, value in state["arches"][arch].items()
-               if key not in ("handler_source_url",)}
-        for arch in sorted(state["arches"])
-    }
     return digest_of(json.dumps(base, sort_keys=True).encode())
 
 
@@ -224,7 +243,10 @@ def resolve():
     if tuple(map(int, version.split("."))) < (25, 12, 0):
         raise ValueError("PassWall APK requires ImmortalWrt 25.12 or newer")
 
-    pw = stable_release(json_request(PASSWALL_API, headers))
+    pw_tag = newest_tag(json_request(PASSWALL_TAGS_API, headers), r"\d+\.\d+\.\d+-\d+")
+    pw = stable_release(json_request(PASSWALL_RELEASE_TAGS_API.format(tag=pw_tag["name"]), headers))
+    if pw["tag_name"] != pw_tag["name"]:
+        raise ValueError("PassWall release does not match its newest tag")
     app = select_asset(pw, r"25\.12\+_luci-app-passwall-[0-9][0-9A-Za-z.+~-]*\.apk",
                        "Openwrt-Passwall/openwrt-passwall")
     i18n = select_asset(pw, r"25\.12\+_luci-i18n-passwall-zh-cn-[0-9][0-9A-Za-z.+~-]*\.apk",
@@ -234,7 +256,8 @@ def resolve():
     if re.sub(r"-r\d+$", "", pw_version) != re.sub(r"-r\d+$", "", translation_version):
         raise ValueError("PassWall app and Chinese translation versions disagree")
 
-    release = stable_release(json_request(RELEASE_API, headers))
+    handler_tag = newest_tag(json_request(LANDSCAPE_TAGS_API, headers), r"v\d+\.\d+\.\d+")
+    release = stable_release(json_request(LANDSCAPE_RELEASE_TAGS_API.format(tag=handler_tag["name"]), headers))
     tag = release["tag_name"]
     if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag):
         raise ValueError("Unexpected stable version format")
