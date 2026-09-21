@@ -4,9 +4,10 @@ set -eu
 # Three attempts with exponential back-off (10s → 20s → 40s) guard against
 # transient mirror/network issues (USTC, SourceForge).
 apk_retry() {
-    _retries=3 _delay=10
-    for _i in $(seq 1 $_retries); do
-        if command apk "$@"; then return 0; fi
+    _retries=3 _delay=10 _i=0
+    while [ "$_i" -lt "$_retries" ]; do
+        _i=$(($_i + 1))
+        if apk "$@"; then return 0; fi
         [ "$_i" -lt "$_retries" ] || return 1
         echo "::warning::apk $* failed (attempt $_i/$_retries), retrying in ${_delay}s" >&2
         sleep "$_delay"; _delay=$(($_delay * 2))
