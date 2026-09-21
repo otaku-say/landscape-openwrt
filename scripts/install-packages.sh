@@ -1,5 +1,17 @@
 #!/bin/sh
 set -eu
+# Retry wrapper for network-dependent apk operations.
+# Three attempts with exponential back-off (10s → 20s → 40s) guard against
+# transient mirror/network issues (USTC, SourceForge).
+apk_retry() {
+    _retries=3 _delay=10
+    for _i in $(seq 1 $_retries); do
+        if command apk "$@"; then return 0; fi
+        [ "$_i" -lt "$_retries" ] || return 1
+        echo "::warning::apk $* failed (attempt $_i/$_retries), retrying in ${_delay}s" >&2
+        sleep "$_delay"; _delay=$(($_delay * 2))
+    done
+}
 mkdir -p /var/lock /var/run /var/state /tmp/.uci /tmp/apk-cache
 # Keep verified indexes across the signed online and local-only transactions.
 apk() { command apk --cache-dir /tmp/apk-cache "$@"; }
@@ -31,6 +43,20 @@ for item in dependency_feed dependency_key; do
 done
 apk verify /tmp/passwall-feed.adb
 feed=$(jsonfilter -i "$metadata" -e '@.dependency_feed_url')
+# Probe SourceForge mirrors; fall back to JAIST (Japan) or NCHC (Taiwan) when
+# the primary host is unreachable or too slow.
+if command -v wget >/dev/null 2>&1; then
+    for mirror in master.dl.sourceforge.net jaist.dl.sourceforge.net nchc.dl.sourceforge.net; do
+        candidate=$(echo "$feed" | sed "s|//[^/]*|//${mirror}|")
+        if wget -q --spider --timeout=10 "$candidate" 2>/dev/null; then
+            if [ "$candidate" != "$feed" ]; then
+                echo "::notice::PassWall feed mirror: $mirror"
+            fi
+            feed="$candidate"
+            break
+        fi
+    done
+fi
 printf '@passwall %s\n' "$feed" > /etc/apk/repositories.d/passwall.list
 apk adbdump --format json /tmp/passwall-feed.adb > /tmp/passwall-feed.json
 set --
@@ -41,7 +67,7 @@ while IFS= read -r package; do
 done < /tmp/passwall-packages.txt
 # Signature verification stays enabled for every downloaded dependency.
 # shellcheck disable=SC2086
-apk --update-cache add $deps "$@" haproxy kmod-nft-tproxy kmod-nft-socket \
+apk_retry --update-cache add $deps "$@" haproxy kmod-nft-tproxy kmod-nft-socket \
     kmod-nft-nat kmod-nf-reject kmod-nf-reject6 \
     bash unzip openssl-util shadow-chpasswd zoneinfo-all
 # These two upstream release APKs are authenticated by their GitHub SHA256 above.
