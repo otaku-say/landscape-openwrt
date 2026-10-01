@@ -3,10 +3,14 @@
 import argparse
 import base64
 import hashlib
+import http.client
 import json
 import os
+import random
 import re
 import subprocess
+import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -27,6 +31,17 @@ ACCEPT = ", ".join([
     "application/vnd.oci.image.manifest.v1+json",
     "application/vnd.docker.distribution.manifest.v2+json",
 ])
+
+# Upstream CDNs (SourceForge's Cloudflare edge, the GitHub API, GHCR) answer
+# with 5xx/52x hiccups now and then. A single blip must not sink a whole
+# publication run, so every GET below retries transient failures with bounded
+# exponential backoff before giving up.
+HTTP_TIMEOUT = 120
+HTTP_ATTEMPTS = 5
+HTTP_RETRY_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504, 507, 509, 522, 524})
+HTTP_BASE_DELAY = 3.0
+HTTP_MAX_DELAY = 60.0
+USER_AGENT = "landscape-openwrt"
 
 # Landscape publishes a multi-arch manifest list. The Docker platforms and the
 # upstream ImmortalWrt/PassWall architecture names do not line up directly, so
@@ -49,10 +64,48 @@ ARCHES = {
 }
 
 
+def retry_delay(attempt, headers=None):
+    """Delay before the next attempt: honour Retry-After, else exponential backoff.
+
+    The jitter keeps several jobs (and several requests in one job) from
+    retrying in lockstep against an upstream that is already struggling.
+    """
+    retry_after = headers.get("Retry-After") if headers else None
+    if retry_after:
+        try:
+            return min(float(retry_after), HTTP_MAX_DELAY)
+        except ValueError:
+            pass
+    return min(HTTP_BASE_DELAY * 2 ** attempt, HTTP_MAX_DELAY) * (0.75 + random.random() / 2)
+
+
 def request(url, headers=None):
-    req = urllib.request.Request(url, headers={"User-Agent": "landscape-openwrt", **(headers or {})})
-    with urllib.request.urlopen(req, timeout=120) as response:
-        return response.read(), response.headers
+    """GET a URL, retrying transient upstream failures.
+
+    Every downloaded artifact is verified against a pinned or resolved SHA256
+    by the caller, so retrying a different CDN edge can never smuggle in
+    unexpected content: a bad response fails the digest check instead.
+    """
+    last_error = None
+    for attempt in range(HTTP_ATTEMPTS):
+        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, **(headers or {})})
+        try:
+            with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as response:
+                return response.read(), response.headers
+        except urllib.error.HTTPError as error:
+            if error.code not in HTTP_RETRY_STATUS:
+                raise
+            last_error = error
+            delay = retry_delay(attempt, error.headers)
+        except (urllib.error.URLError, http.client.HTTPException,
+                TimeoutError, ConnectionError) as error:
+            last_error = error
+            delay = retry_delay(attempt)
+        if attempt < HTTP_ATTEMPTS - 1:
+            print(f"::warning::GET {url} failed ({last_error!r}); "
+                  f"retrying in {delay:.1f}s ({attempt + 1}/{HTTP_ATTEMPTS - 1})", file=sys.stderr)
+            time.sleep(delay)
+    raise last_error
 
 
 def json_request(url, headers=None):

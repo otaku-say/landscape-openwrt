@@ -2,6 +2,7 @@ import copy
 import importlib.util
 from pathlib import Path
 import unittest
+import urllib.error
 from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('upstreams', Path(__file__).parents[1] / 'scripts/upstreams.py')
@@ -175,6 +176,80 @@ class InputsTest(unittest.TestCase):
         with patch.object(registry, 'manifest', return_value=({'manifests': []}, 'index')):
             with self.assertRaises(ValueError):
                 registry.platform_config('latest', 'arm64')
+
+
+class RequestRetryTest(unittest.TestCase):
+    """Transient upstream failures must be retried, permanent ones must not."""
+
+    class Response:
+        def __init__(self, body):
+            self.body = body
+            self.headers = {}
+
+        def read(self):
+            return self.body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            return False
+
+    def _error(self, code, retry_after=None):
+        headers = {'Retry-After': retry_after} if retry_after else {}
+        return urllib.error.HTTPError('https://example.com/x', code, 'error', headers, None)
+
+    @patch.object(u.time, 'sleep')
+    @patch.object(u.urllib.request, 'urlopen')
+    def test_transient_status_is_retried(self, urlopen, sleep):
+        urlopen.side_effect = [self._error(522), self._error(503), self.Response(b'payload')]
+        body, _ = u.request('https://example.com/x')
+        self.assertEqual(body, b'payload')
+        self.assertEqual(urlopen.call_count, 3)
+        self.assertEqual(sleep.call_count, 2)
+
+    @patch.object(u.time, 'sleep')
+    @patch.object(u.urllib.request, 'urlopen')
+    def test_permanent_status_fails_immediately(self, urlopen, sleep):
+        urlopen.side_effect = self._error(404)
+        with self.assertRaises(urllib.error.HTTPError):
+            u.request('https://example.com/x')
+        self.assertEqual(urlopen.call_count, 1)
+        self.assertFalse(sleep.called)
+
+    @patch.object(u.time, 'sleep')
+    @patch.object(u.urllib.request, 'urlopen')
+    def test_connection_errors_are_retried(self, urlopen, sleep):
+        urlopen.side_effect = [urllib.error.URLError('timed out'), self.Response(b'payload')]
+        self.assertEqual(u.request('https://example.com/x')[0], b'payload')
+        self.assertEqual(urlopen.call_count, 2)
+
+    @patch.object(u.time, 'sleep')
+    @patch.object(u.urllib.request, 'urlopen')
+    def test_retries_are_bounded(self, urlopen, sleep):
+        urlopen.side_effect = self._error(504)
+        with self.assertRaises(urllib.error.HTTPError):
+            u.request('https://example.com/x')
+        self.assertEqual(urlopen.call_count, u.HTTP_ATTEMPTS)
+        self.assertEqual(sleep.call_count, u.HTTP_ATTEMPTS - 1)
+
+    @patch.object(u.time, 'sleep')
+    @patch.object(u.urllib.request, 'urlopen')
+    def test_retry_after_is_honoured(self, urlopen, sleep):
+        urlopen.side_effect = [self._error(429, retry_after='7'), self.Response(b'payload')]
+        u.request('https://example.com/x')
+        self.assertEqual(sleep.call_args[0][0], 7.0)
+
+    @patch.object(u.time, 'sleep')
+    @patch.object(u.urllib.request, 'urlopen')
+    def test_backoff_grows_and_stays_bounded(self, urlopen, sleep):
+        urlopen.side_effect = self._error(503)
+        with self.assertRaises(urllib.error.HTTPError):
+            u.request('https://example.com/x')
+        delays = [call[0][0] for call in sleep.call_args_list]
+        self.assertEqual(delays, sorted(delays))
+        self.assertLessEqual(max(delays), u.HTTP_MAX_DELAY * 1.25)
+        self.assertGreaterEqual(min(delays), u.HTTP_BASE_DELAY * 0.75)
 
 
 if __name__ == '__main__':
