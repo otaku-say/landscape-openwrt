@@ -101,26 +101,42 @@ class InputsTest(unittest.TestCase):
         tags = [{'name': t} for t in ['v25.12.2', 'v25.12.10', 'v26.0.0-rc1', 'v24.10.99']]
         self.assertEqual(u.latest_stable_tag(tags)['name'], 'v25.12.10')
 
-    def test_newest_passwall_tag(self):
-        tags = [{'name': t} for t in ['26.9.9-1', '26.9.16-1', '26.8.19-2', '26.8.19-1', 'not-a-version']]
-        self.assertEqual(u.newest_tag(tags, r'\d+\.\d+\.\d+-\d+')['name'], '26.9.16-1')
+    def test_newest_stable_passwall_release(self):
+        releases = [{'tag_name': t} for t in
+                    ['26.9.9-1', '26.9.16-1', '26.8.19-2', '26.8.19-1', 'not-a-version']]
+        self.assertEqual(u.newest_stable_release(releases, r'\d+\.\d+\.\d+-\d+')['tag_name'],
+                         '26.9.16-1')
 
-    def test_newest_landscape_tag(self):
-        tags = [{'name': t} for t in ['v0.24.2', 'v0.24.3', 'v0.24.10', 'v0.25.0-rc1']]
-        self.assertEqual(u.newest_tag(tags, r'v\d+\.\d+\.\d+')['name'], 'v0.24.10')
+    def test_release_version_ranking_is_numeric(self):
+        releases = [{'tag_name': t} for t in ['v0.24.3', 'v0.24.10', 'v0.9.99']]
+        self.assertEqual(u.newest_stable_release(releases, r'v\d+\.\d+\.\d+')['tag_name'], 'v0.24.10')
 
-    def test_reject_missing_matching_tag(self):
+    def test_newest_stable_landscape_release_skips_prerelease(self):
+        # 回归：2026-10-04 upstream 把 v0.25.2 标为 prerelease，流水线必须回退到 v0.25.1
+        releases = [{'tag_name': 'v0.25.2', 'prerelease': True},
+                    {'tag_name': 'v0.25.1'},
+                    {'tag_name': 'v0.25.0'},
+                    {'tag_name': 'v0.24.10'},
+                    {'tag_name': 'v0.25.0-rc1'}]
+        self.assertEqual(u.newest_stable_release(releases, r'v\d+\.\d+\.\d+')['tag_name'], 'v0.25.1')
+
+    def test_draft_and_prerelease_are_never_inputs(self):
+        for flag in ('draft', 'prerelease'):
+            with self.subTest(flag=flag):
+                releases = [{'tag_name': 'v0.25.2', flag: True}, {'tag_name': 'v0.25.1'}]
+                self.assertEqual(u.newest_stable_release(releases, r'v\d+\.\d+\.\d+')['tag_name'],
+                                 'v0.25.1')
         with self.assertRaises(ValueError):
-            u.newest_tag([{'name': 'v0.25.0-rc1'}], r'v\d+\.\d+\.\d+')
+            u.newest_stable_release([{'tag_name': 'v0.25.2', 'prerelease': True}],
+                                    r'v\d+\.\d+\.\d+')
+
+    def test_reject_missing_matching_release(self):
+        with self.assertRaises(ValueError):
+            u.newest_stable_release([{'tag_name': 'v0.25.0-rc1'}], r'v\d+\.\d+\.\d+')
 
     def test_reject_missing_stable_tag(self):
         with self.assertRaises(ValueError):
             u.latest_stable_tag([{'name': 'v26.0.0-rc1'}])
-
-    def test_reject_prerelease_and_draft(self):
-        for flag in ('draft', 'prerelease'):
-            with self.assertRaises(ValueError):
-                u.stable_release({flag: True})
 
     def test_checksum_exact_filename(self):
         self.assertEqual(u.rootfs_checksum('a'*64+'  rootfs.tar.gz\n'+'b'*64+'  other.tar.gz', 'rootfs.tar.gz'), 'a'*64)
