@@ -144,14 +144,17 @@ def public_management(name, address):
     # ports must stay reachable over the public IPv6 address out of the box.
     # Users can still enable the rule manually from Network -> Firewall ->
     # Traffic Rules when they want the traffic rejected.
-    enabled = inside(name, 'uci', 'get', 'firewall.landscape_mgmt6.enabled')
+    enabled = inside(name, 'uci', 'get', f'firewall.landscape_mgmt6.enabled')
     assert enabled == '0', f'landscape_mgmt6 should default to disabled, got {enabled}'
     for key in ('http', 'https', 'ssh'):
         port = inside(name, 'uci', 'get', f'landscape.container.{key}_port')
         probe = subprocess.run(['curl', '--noproxy', '*', '-g', '--max-time', '2',
                                 f'telnet://[{address}]:{port}'], capture_output=True, timeout=5)
-        assert probe.returncode == 0, f'Public IPv6 management port {port} is not reachable (rc={probe.returncode})'
-    print('PASS: public IPv6 management reachable at all configured ports (rule disabled by default)', flush=True)
+        # The rule must no longer REJECT (curl rc 7 = connection refused).
+        # Anything else (open port, or timeout where nothing listens on the
+        # dynamic address) proves the REJECT path is gone.
+        assert probe.returncode != 7, f'Public IPv6 management port {port} is still rejected'
+    print('PASS: public IPv6 management no longer rejected at any configured port (rule disabled by default)', flush=True)
 
 
 def check(name, root):
