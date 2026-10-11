@@ -140,12 +140,18 @@ def verify(name, root):
 
 
 def public_management(name, address):
+    # The Block public IPv6 management rule ships disabled by default; the
+    # ports must stay reachable over the public IPv6 address out of the box.
+    # Users can still enable the rule manually from Network -> Firewall ->
+    # Traffic Rules when they want the traffic rejected.
+    enabled = inside(name, 'uci', 'get', 'firewall.landscape_mgmt6.enabled')
+    assert enabled == '0', f'landscape_mgmt6 should default to disabled, got {enabled}'
     for key in ('http', 'https', 'ssh'):
         port = inside(name, 'uci', 'get', f'landscape.container.{key}_port')
-        blocked = subprocess.run(['curl', '--noproxy', '*', '-g', '--max-time', '2',
-                                  f'telnet://[{address}]:{port}'], capture_output=True, timeout=5)
-        assert blocked.returncode == 7, f'Public IPv6 management port {port} is not rejected'
-    print('PASS: public IPv6 management rejected at all configured ports', flush=True)
+        probe = subprocess.run(['curl', '--noproxy', '*', '-g', '--max-time', '2',
+                                f'telnet://[{address}]:{port}'], capture_output=True, timeout=5)
+        assert probe.returncode == 0, f'Public IPv6 management port {port} is not reachable (rc={probe.returncode})'
+    print('PASS: public IPv6 management reachable at all configured ports (rule disabled by default)', flush=True)
 
 
 def check(name, root):
