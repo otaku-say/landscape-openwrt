@@ -32,11 +32,18 @@ proxy_sport=${LAND_PROXY_SERVER_PORT:-12345}
 case "$proxy_sport" in ''|*[!0-9]*) fail 'LAND_PROXY_SERVER_PORT must be an integer (1-65535).' ;; esac
 if [ "$proxy_sport" -lt 1 ] || [ "$proxy_sport" -gt 65535 ]; then fail 'LAND_PROXY_SERVER_PORT must be in range 1-65535.'; fi
 proxy_mode_raw=${LAND_PROXY_HANDLE_MODE:-route}
-proxy_mode=$(printf '%s' "$proxy_mode_raw" | tr '_' '-')
-case "$proxy_mode" in tproxy|route|multiple-tproxy) ;; *) fail 'LAND_PROXY_HANDLE_MODE must be tproxy, route, or multiple-tproxy.' ;; esac
+case "$proxy_mode_raw" in
+    route) proxy_mode=route ;;
+    tproxy) proxy_mode=tproxy ;;
+    multiple-tproxy|multiple_tproxy) proxy_mode=multiple-tproxy ;;
+    *) fail 'LAND_PROXY_HANDLE_MODE must be tproxy, route, or multiple-tproxy.' ;;
+esac
 icmp_on_raw=${LAND_PROXY_ENABLE_ICMP_PASSTHROUGH:-true}
-icmp_on=$(printf '%s' "$icmp_on_raw" | tr '[:upper:]' '[:lower:]')
-case "$icmp_on" in true|false) ;; *) fail 'LAND_PROXY_ENABLE_ICMP_PASSTHROUGH must be true or false (document format).' ;; esac
+case "$icmp_on_raw" in
+    [Tt][Rr][Uu][Ee]) icmp_on=true ;;
+    [Ff][Aa][Ll][Ss][Ee]) icmp_on=false ;;
+    *) fail 'LAND_PROXY_ENABLE_ICMP_PASSTHROUGH must be true or false (document format).' ;;
+esac
 icmp_mark=${LAND_PROXY_ICMP_MARK_VALUE:-2}
 case "$icmp_mark" in '' | *[!0-9]* | 0) fail 'LAND_PROXY_ICMP_MARK_VALUE must be a positive decimal integer.' ;; esac
 proxy_sock_path=${LAND_SOCK_PATH:-/ld_unix_link}

@@ -91,6 +91,8 @@ start_container() {
         --label ld_flow_edge=true --ulimit memlock=-1:-1 \
         -e LAND_DNS_ADDR -e LAND_ROOT_PASSWORD -e TZ \
         -e LAND_REDIRECT_LOG_LEVEL="${LAND_REDIRECT_LOG_LEVEL:-ERROR}" \
+        -e LAND_PROXY_ENABLE_ICMP_PASSTHROUGH="${LAND_PROXY_ENABLE_ICMP_PASSTHROUGH:-true}" \
+        -e LAND_PROXY_ICMP_MARK_VALUE="${LAND_PROXY_ICMP_MARK_VALUE:-2}" \
         -e LUCI_HTTP_PORT -e LUCI_HTTPS_PORT -e SSH_PORT \
         --sysctl net.ipv4.conf.lo.accept_local=1 \
         --sysctl net.ipv6.conf.all.disable_ipv6=0 \
