@@ -23,12 +23,26 @@ gw4=$(ip -4 route show default dev eth0 | awk '$1 == "default" && $2 == "via" {p
 gw6=$(ip -6 route show default dev eth0 | awk '$1 == "default" && $2 == "via" {print $3; exit}')
 [ -n "$ip4" ] && [ -n "$gw4" ] || fail 'Docker must supply an IPv4 address and gateway.'
 [ -n "$ip6" ] && [ -n "$gw6" ] || fail 'Docker must supply an IPv6 address and gateway; enable IPv6 on its bridge.'
+# redirect_pkg_handler 8项参数校验、归一化（严格对齐文档口径）
+proxy_saddr=${LAND_PROXY_SERVER_ADDR:-0.0.0.0}
+case "$proxy_saddr" in ''|*[!0-9.]*) fail 'LAND_PROXY_SERVER_ADDR must be a valid IPv4 address.' ;; esac
+proxy_saddr6=${LAND_PROXY_SERVER_ADDR_V6:-::}
+case "$proxy_saddr6" in ''|*[!0-9a-fA-F:]*) fail 'LAND_PROXY_SERVER_ADDR_V6 must be a valid IPv6 address.' ;; esac
+proxy_sport=${LAND_PROXY_SERVER_PORT:-12345}
+case "$proxy_sport" in ''|*[!0-9]*) fail 'LAND_PROXY_SERVER_PORT must be an integer (1-65535).' ;; esac
+if [ "$proxy_sport" -lt 1 ] || [ "$proxy_sport" -gt 65535 ]; then fail 'LAND_PROXY_SERVER_PORT must be in range 1-65535.'; fi
+proxy_mode_raw=${LAND_PROXY_HANDLE_MODE:-route}
+proxy_mode=$(printf '%s' "$proxy_mode_raw" | tr '_' '-')
+case "$proxy_mode" in tproxy|route|multiple-tproxy) ;; *) fail 'LAND_PROXY_HANDLE_MODE must be tproxy, route, or multiple-tproxy.' ;; esac
+icmp_on_raw=${LAND_PROXY_ENABLE_ICMP_PASSTHROUGH:-true}
+icmp_on=$(printf '%s' "$icmp_on_raw" | tr '[:upper:]' '[:lower:]')
+case "$icmp_on" in true|false) ;; *) fail 'LAND_PROXY_ENABLE_ICMP_PASSTHROUGH must be true or false (document format).' ;; esac
+icmp_mark=${LAND_PROXY_ICMP_MARK_VALUE:-2}
+case "$icmp_mark" in '' | *[!0-9]* | 0) fail 'LAND_PROXY_ICMP_MARK_VALUE must be a positive decimal integer.' ;; esac
+proxy_sock_path=${LAND_SOCK_PATH:-/ld_unix_link}
+[ "$proxy_sock_path" = '/ld_unix_link' ] || fail 'LAND_SOCK_PATH must be /ld_unix_link (fixed mount in container).'
 log_level=${LAND_REDIRECT_LOG_LEVEL:-ERROR}
 case "$log_level" in OFF|ERROR|WARN|INFO|DEBUG|TRACE) ;; *) fail 'Invalid LAND_REDIRECT_LOG_LEVEL.' ;; esac
-icmp_on=${LAND_ENABLE_ICMP_PASSTHROUGH:-0}
-case "$icmp_on" in 0|1) ;; *) fail 'LAND_ENABLE_ICMP_PASSTHROUGH must be 0 or 1.' ;; esac
-icmp_mark=${LAND_ICMP_MARK_VALUE:-2}
-case "$icmp_mark" in '' | *[!0-9]* | 0) fail 'LAND_ICMP_MARK_VALUE must be a positive decimal integer.' ;; esac
 tz=${TZ:-Asia/Shanghai}
 case "$tz" in ''|/*|*..*|*[!A-Za-z0-9_+/-]*) fail 'TZ must be a valid IANA timezone.' ;; esac
 [ -f "/usr/share/zoneinfo/$tz" ] || fail 'Unknown TZ; use an installed IANA timezone such as Asia/Shanghai.'
@@ -75,9 +89,14 @@ uci commit network
 [ -f /etc/config/landscape ] || touch /etc/config/landscape
 uci set landscape.container=container
 uci set "landscape.container.timezone=$tz"
-uci set landscape.container.log_level="$log_level"
+uci set landscape.container.proxy_server_addr="$proxy_saddr"
+uci set landscape.container.proxy_server_addr_v6="$proxy_saddr6"
+uci set landscape.container.proxy_server_port="$proxy_sport"
+uci set landscape.container.proxy_handle_mode="$proxy_mode"
 uci set landscape.container.icmp_passthrough="$icmp_on"
 uci set landscape.container.icmp_mark="$icmp_mark"
+uci set landscape.container.sock_path="$proxy_sock_path"
+uci set landscape.container.log_level="$log_level"
 uci commit landscape
 /usr/libexec/landscape-management
 
