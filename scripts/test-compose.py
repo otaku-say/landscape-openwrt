@@ -12,6 +12,16 @@ ROOT = Path(__file__).resolve().parents[1]
 RFC1918 = tuple(map(ipaddress.ip_network, ('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16')))
 ULA = ipaddress.ip_network('fc00::/7')
 PORT_DEFAULTS = {'LUCI_HTTP_PORT': '80', 'LUCI_HTTPS_PORT': '443', 'SSH_PORT': '22'}
+HANDLER_DEFAULTS = {
+    'LAND_PROXY_SERVER_ADDR': '0.0.0.0',
+    'LAND_PROXY_SERVER_ADDR_V6': '::',
+    'LAND_PROXY_SERVER_PORT': '12345',
+    'LAND_PROXY_HANDLE_MODE': 'route',
+    'LAND_PROXY_ENABLE_ICMP_PASSTHROUGH': 'true',
+    'LAND_PROXY_ICMP_MARK_VALUE': '2',
+    'LAND_SOCK_PATH': '/ld_unix_link',
+    'LAND_REDIRECT_LOG_LEVEL': 'ERROR',
+}
 
 
 def validate_network(config, resolved):
@@ -60,7 +70,7 @@ def validate_config(config, resolved):
     assert service['environment']['LAND_REDIRECT_LOG_LEVEL'] == level, 'handler log level interpolation mismatch'
     assert 'ports' not in service and 'expose' not in service, 'native listeners must not be published'
     assert 'LAN_BIND_IP' not in service['environment'], 'host address binding must not return'
-    for key, default in PORT_DEFAULTS.items():
+    for key, default in {**PORT_DEFAULTS, **HANDLER_DEFAULTS}.items():
         assert service['environment'][key] == (resolved.get(key) or default), f'{key} interpolation mismatch'
     assert set(service['networks']) == {'edge'}, 'the Flow exit must use one network'
     edge = config['networks']['edge']

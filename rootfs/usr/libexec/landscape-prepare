@@ -74,9 +74,9 @@ uci commit firewall
 # 安装保底：缺 nft 也只记日志，不阻断启动。
 _icmp_on="$(uci -q get landscape.container.icmp_passthrough || true)"
 _icmp_mark="$(uci -q get landscape.container.icmp_mark || true)"
-_icmp_on=${_icmp_on:-0}
+_icmp_on=${_icmp_on:-true}
 _icmp_mark=${_icmp_mark:-2}
-if [ "$_icmp_on" = 1 ]; then
+if [ "$_icmp_on" = true ]; then
     if command -v nft > /dev/null 2>&1; then
         # 幂等删除旧规则（忽略不存在的情况）
         nft -a list chain inet fw4 srcnat_lan 2>/dev/null | \

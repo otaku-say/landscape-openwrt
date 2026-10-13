@@ -19,7 +19,12 @@ class RedirectLoggingTest(unittest.TestCase):
             service.write_text(SERVICE.read_text().replace('/tmp/landscape-prepared', str(marker)))
             harness = root / 'harness.sh'
             harness.write_text('''#!/bin/sh
-uci() { [ -n "$TEST_LOG_LEVEL" ] || return 1; printf '%s\\n' "$TEST_LOG_LEVEL"; }
+uci() {
+    case "$*" in
+        *"container.log_level"*) [ -n "$TEST_LOG_LEVEL" ] || return 1; printf '%s\n' "$TEST_LOG_LEVEL" ;;
+        *) return 1 ;;
+    esac
+}
 logger() { printf '%s\\n' "$*" >&2; }
 procd_open_instance() { printf 'open\\n'; }
 procd_set_param() { printf '%s\\n' "$*"; }
@@ -35,7 +40,7 @@ start_service
             with self.subTest(level=level):
                 result = self.run_service(level)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertIn('--log-level ERROR\n', result.stdout)
+                self.assertIn('--log-level ERROR', result.stdout)
                 self.assertIn('stdout 1\n', result.stdout)
                 self.assertIn('stderr 1\n', result.stdout)
                 self.assertNotIn('--log-level INFO', result.stdout)
@@ -43,7 +48,7 @@ start_service
     def test_off_silences_both_streams_without_disabling_handler(self):
         result = self.run_service('OFF')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('command /usr/bin/redirect_pkg_handler --mode route --sock_path /ld_unix_link --log-level OFF\n', result.stdout)
+        self.assertIn('command /usr/bin/redirect_pkg_handler --saddr 0.0.0.0 --saddr6 :: --sport 12345 --mode route --sock_path /ld_unix_link --log-level OFF --enable-icmp-passthrough --icmp-mark-value 2\n', result.stdout)
         self.assertIn('stdout 0\n', result.stdout)
         self.assertIn('stderr 0\n', result.stdout)
         self.assertIn('respawn 3600 5 0\n', result.stdout)
@@ -55,7 +60,7 @@ start_service
             with self.subTest(level=level):
                 result = self.run_service(level)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertIn(f'--log-level {level}\n', result.stdout)
+                self.assertIn(f'--log-level {level}', result.stdout)
                 self.assertIn('stdout 1\n', result.stdout)
                 self.assertIn('stderr 1\n', result.stdout)
 
