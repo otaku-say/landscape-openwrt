@@ -69,6 +69,44 @@ uci set 'firewall.@defaults[0].fullcone6=0'
 # (Dockerfile) so users can override them persistently; never reset them here.
 uci commit firewall
 
+# ICMP passthrough: 当 on=1 时，为 mark 打上 masquerade，让 ICMP 能经 NAT 出网。
+# 规则幂等：先删同名 comment 的旧规则，再按 mark 值重新插入。
+# 安装保底：缺 nft 也只记日志，不阻断启动。
+_icmp_on="$(uci -q get landscape.container.icmp_passthrough || true)"
+_icmp_mark="$(uci -q get landscape.container.icmp_mark || true)"
+_icmp_on=${_icmp_on:-0}
+_icmp_mark=${_icmp_mark:-2}
+if [ "$_icmp_on" = 1 ]; then
+    if command -v nft > /dev/null 2>&1; then
+        # 幂等删除旧规则（忽略不存在的情况）
+        nft -a list chain inet fw4 srcnat_lan 2>/dev/null | \
+            awk '/icmp-passthrough-mark-nat/{print $NF}' | \
+            xargs -r -I{} nft delete rule inet fw4 srcnat_lan handle {} 2>/dev/null || true
+        nft -a list chain ip fw4 srcnat_lan 2>/dev/null | \
+            awk '/icmp-passthrough-mark-nat/{print $NF}' | \
+            xargs -r -I{} nft delete rule ip fw4 srcnat_lan handle {} 2>/dev/null || true
+        nft -a list chain ip6 fw4 srcnat_lan 2>/dev/null | \
+            awk '/icmp-passthrough-mark-nat/{print $NF}' | \
+            xargs -r -I{} nft delete rule ip6 fw4 srcnat_lan handle {} 2>/dev/null || true
+        # 计算十六进制 mark
+        _mark_hex="$(printf '0x%x' "$_icmp_mark")"
+        # 插入 mark-masquerade 规则（inet 优先；fw4 实际用 ip+ip6 双表，兼顾两者）
+        nft add rule inet fw4 srcnat_lan \
+            meta mark and "${_mark_hex}" == "${_mark_hex}" masquerade comment '"icmp-passthrough-mark-nat"' \
+            2>/dev/null || \
+        { nft add rule ip fw4 srcnat_lan \
+              meta mark and "${_mark_hex}" == "${_mark_hex}" masquerade comment '"icmp-passthrough-mark-nat"' \
+              2>/dev/null || true
+          nft add rule ip6 fw4 srcnat_lan \
+              meta mark and "${_mark_hex}" == "${_mark_hex}" masquerade comment '"icmp-passthrough-mark-nat"' \
+              2>/dev/null || true; }
+        logger -t landscape-prepare "ICMP passthrough nft mark masquerade inserted (mark=${_icmp_mark})"
+    else
+        apk add nftables > /dev/null 2>&1 || \
+            logger -t landscape-prepare 'nftables not available; ICMP mark masquerade skipped'
+    fi
+fi
+
 stop_dhcp() {
     local section="$1"
     uci set "dhcp.$section.ignore=1"

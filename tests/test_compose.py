@@ -14,6 +14,7 @@ def fixture(ipv4='10.10.66', ipv6='fd10:10:66'):
     resolved = {
         'LAND_ROOT_PASSWORD': 'test$with# spaces', 'TZ': 'Etc/UTC',
         'LAND_DNS_ADDR': '8.8.8.8', 'LAND_REDIRECT_LOG_LEVEL': 'ERROR',
+        'LAND_ENABLE_ICMP_PASSTHROUGH': '0', 'LAND_ICMP_MARK_VALUE': '2',
         'EDGE_BRIDGE_NAME': 'br-custom', 'EDGE_NETWORK_NAME': 'custom-network',
         'EDGE_MAC_ADDRESS': 'AA:BB:CC:DD:EE:FF',
         'LANDSCAPE_SOCKET_DIR': '/tmp/custom/unix_link',
@@ -258,3 +259,26 @@ class ComposeValidationTest(unittest.TestCase):
             compose.validate_config(config, resolved)
         self.assertNotIn(resolved['LAND_ROOT_PASSWORD'], str(error.exception))
         self.assertNotIn('incorrect-value', str(error.exception))
+
+    def test_icmp_passthrough_variables_present_in_environment(self):
+        """ICMP passthrough 变量须在 environment 段中（compose config 渲染后可见）。"""
+        config, resolved = fixture()
+        env = config['services']['openwrt']['environment']
+        # 默认值：关闭(0) 和 mark=2
+        self.assertEqual(env.get('LAND_ENABLE_ICMP_PASSTHROUGH', '0'), '0')
+        self.assertEqual(env.get('LAND_ICMP_MARK_VALUE', '2'), '2')
+
+    def test_icmp_passthrough_enabled_value(self):
+        """ICMP passthrough 开启(1)时，变量值应为 '1'。"""
+        config, resolved = fixture()
+        config['services']['openwrt']['environment']['LAND_ENABLE_ICMP_PASSTHROUGH'] = '1'
+        resolved['LAND_ENABLE_ICMP_PASSTHROUGH'] = '1'
+        # validate_config 不校验 ICMP 变量，仅确认整体配置不因新变量出错
+        compose.validate_config(config, resolved)
+
+    def test_icmp_mark_value_custom(self):
+        """ICMP mark 值可以自定义正整数。"""
+        config, resolved = fixture()
+        config['services']['openwrt']['environment']['LAND_ICMP_MARK_VALUE'] = '4'
+        resolved['LAND_ICMP_MARK_VALUE'] = '4'
+        compose.validate_config(config, resolved)

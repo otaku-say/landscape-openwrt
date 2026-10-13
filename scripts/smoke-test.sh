@@ -134,6 +134,13 @@ for _ in {1..40}; do [[ ! -s "$socket_dir/enrollment.json" ]] || break; sleep 2;
 id=$(docker inspect -f '{{.Id}}' "$name")
 python3 -c 'import json,sys; v=json.load(open(sys.argv[1])); assert sys.argv[2].startswith(v["id"]); assert v["ifindex"]>0' "$socket_dir/enrollment.json" "$id"
 docker exec "$name" sh -ec '! pidof odhcpd; test "$(uci get dhcp.lan.ignore)" = 1; test "$(uci get firewall.@defaults[0].flow_offloading)" = 0; test "$(uci get firewall.@defaults[0].syn_flood)" = 0; test "$(uci get firewall.@defaults[0].input)" = ACCEPT; test "$(uci get firewall.@defaults[0].output)" = ACCEPT; test "$(uci get firewall.@defaults[0].forward)" = ACCEPT; test "$(uci get dhcp.@dnsmasq[0].localise_queries)" = 0; test -z "$(uci -q get dhcp.@dnsmasq[0].cachesize || true)"'
+# ICMP passthrough 默认关：UCI 值为 0，handler 进程参数不含 --enable-icmp-passthrough
+docker exec "$name" sh -ec '
+  test "$(uci -q get landscape.container.icmp_passthrough || echo 0)" = 0
+  args=$(cat /proc/$(pidof redirect_pkg_handler 2>/dev/null || echo 1)/cmdline 2>/dev/null | tr "\0" " " || true)
+  ! echo "$args" | grep -q "enable-icmp-passthrough" || { echo "FAIL: enable-icmp-passthrough should not be in handler args when off"; exit 1; }
+'
+echo 'PASS: ICMP passthrough default off'
 docker exec "$name" nft list chain inet fw4 srcnat_lan | grep 'meta nfproto ipv4.*masquerade'
 docker exec "$name" nft list chain inet fw4 srcnat_lan | grep 'meta nfproto ipv6.*masquerade'
 
