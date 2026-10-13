@@ -23,6 +23,8 @@ services:
       LUCI_HTTP_PORT: ${LUCI_HTTP_PORT:-80}
       LUCI_HTTPS_PORT: ${LUCI_HTTPS_PORT:-443}
       SSH_PORT: ${SSH_PORT:-22}
+      LAND_ENABLE_ICMP_PASSTHROUGH: ${LAND_ENABLE_ICMP_PASSTHROUGH:-0}
+      LAND_ICMP_MARK_VALUE: ${LAND_ICMP_MARK_VALUE:-2}
     sysctls:
       net.ipv4.conf.lo.accept_local: "1"
       net.ipv4.conf.all.rp_filter: "0"

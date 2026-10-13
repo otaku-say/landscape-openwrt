@@ -66,6 +66,10 @@ RUN set -eu; \
     esac; \
     printf '%s  %s\n' "$expected" /usr/bin/redirect_pkg_handler | sha256sum -c -; \
     /usr/bin/redirect_pkg_handler --help >/dev/null; \
+    /usr/bin/redirect_pkg_handler --help 2>&1 | grep -q "enable-icmp-passthrough" || \
+        { echo "Handler missing --enable-icmp-passthrough flag; aborting." >&2; exit 1; }; \
+    /usr/bin/redirect_pkg_handler --help 2>&1 | grep -q "icmp-mark-value" || \
+        { echo "Handler missing --icmp-mark-value flag; aborting." >&2; exit 1; }; \
     /etc/init.d/landscape-prepare enable; \
     /etc/init.d/landscape-redirect enable; \
     for service in sysctl sysntpd sysfixtime fstab gpio_switch led packet_steering sysfsutils autocore automount haproxy; do \

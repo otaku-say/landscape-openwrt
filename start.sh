@@ -25,6 +25,10 @@ gw6=$(ip -6 route show default dev eth0 | awk '$1 == "default" && $2 == "via" {p
 [ -n "$ip6" ] && [ -n "$gw6" ] || fail 'Docker must supply an IPv6 address and gateway; enable IPv6 on its bridge.'
 log_level=${LAND_REDIRECT_LOG_LEVEL:-ERROR}
 case "$log_level" in OFF|ERROR|WARN|INFO|DEBUG|TRACE) ;; *) fail 'Invalid LAND_REDIRECT_LOG_LEVEL.' ;; esac
+icmp_on=${LAND_ENABLE_ICMP_PASSTHROUGH:-0}
+case "$icmp_on" in 0|1) ;; *) fail 'LAND_ENABLE_ICMP_PASSTHROUGH must be 0 or 1.' ;; esac
+icmp_mark=${LAND_ICMP_MARK_VALUE:-2}
+case "$icmp_mark" in '' | *[!0-9]* | 0) fail 'LAND_ICMP_MARK_VALUE must be a positive decimal integer.' ;; esac
 tz=${TZ:-Asia/Shanghai}
 case "$tz" in ''|/*|*..*|*[!A-Za-z0-9_+/-]*) fail 'TZ must be a valid IANA timezone.' ;; esac
 [ -f "/usr/share/zoneinfo/$tz" ] || fail 'Unknown TZ; use an installed IANA timezone such as Asia/Shanghai.'
@@ -72,6 +76,8 @@ uci commit network
 uci set landscape.container=container
 uci set "landscape.container.timezone=$tz"
 uci set landscape.container.log_level="$log_level"
+uci set landscape.container.icmp_passthrough="$icmp_on"
+uci set landscape.container.icmp_mark="$icmp_mark"
 uci commit landscape
 /usr/libexec/landscape-management
 
