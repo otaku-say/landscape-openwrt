@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Test actual PassWall and the official route handler using an isolated VLESS exit."""
+import base64
+import hashlib
 import ipaddress
 import json
 from pathlib import Path
@@ -38,6 +40,25 @@ def uci(name, values):
     for key, value in values.items():
         inside(name, 'uci', 'set', f'passwall.{key}={value}')
     inside(name, 'uci', 'commit', 'passwall')
+
+
+TLS_SERVER_NAME = 'landscape-exit.example.net'
+
+
+def exit_tls_material(root):
+    cert_file = root / 'cert.pem'
+    key_file = root / 'key.pem'
+    run('openssl', 'req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1',
+        '-nodes', '-keyout', str(key_file), '-out', str(cert_file),
+        '-days', '2', '-subj', f'/CN={TLS_SERVER_NAME}',
+        '-addext', f'subjectAltName=DNS:{TLS_SERVER_NAME},IP:203.0.113.2,IP:fd70:6c61:6e64:90::2')
+    cert_pem = cert_file.read_text()
+    key_pem = key_file.read_text()
+    der = base64.b64decode(''.join(
+        line.strip() for line in cert_pem.splitlines()
+        if line.strip() and not line.startswith('-----')
+    ))
+    return cert_pem.splitlines(), key_pem.splitlines(), hashlib.sha256(der).hexdigest()
 
 
 def topology(pid):
@@ -107,10 +128,15 @@ def main():
         root = Path(directory)
         try:
             identity = str(uuid.uuid4())
+            cert_lines, key_lines, pin_sha256 = exit_tls_material(root)
             config = {'log': {'access': str(root / 'access.log'), 'error': str(root / 'error.log'), 'loglevel': 'warning'},
                       'inbounds': [{'listen': '::', 'port': 10443, 'protocol': 'vless',
                                     'settings': {'clients': [{'id': identity}], 'decryption': 'none'},
-                                    'streamSettings': {'network': 'raw', 'security': 'none'}}],
+                                    'streamSettings': {
+                                        'network': 'raw',
+                                        'security': 'tls',
+                                        'tlsSettings': {'certificates': [{'certificate': cert_lines, 'key': key_lines}]},
+                                    }}],
                       'outbounds': [{'protocol': 'freedom'}]}
             (root / 'node.json').write_text(json.dumps(config))
             # Run the shipped musl-linked core inside its own image, not the host libc.
@@ -145,7 +171,9 @@ def main():
                        'landscape_exit.type': 'Xray', 'landscape_exit.protocol': 'vless',
                        'landscape_exit.address': '203.0.113.2', 'landscape_exit.port': '10443',
                        'landscape_exit.uuid': identity, 'landscape_exit.encryption': 'none',
-                       'landscape_exit.transport': 'raw', 'landscape_exit.tls': '0',
+                       'landscape_exit.transport': 'raw', 'landscape_exit.tls': '1',
+                       'landscape_exit.tls_serverName': TLS_SERVER_NAME,
+                       'landscape_exit.tls_pinSHA256': pin_sha256,
                        '@global[0].enabled': '1', '@global[0].node': 'landscape_exit',
                        '@global[0].client_proxy': '1', '@global[0].localhost_proxy': '1',
                        '@global[0].filter_proxy_ipv6': '0', '@global[0].use_direct_list': '0',

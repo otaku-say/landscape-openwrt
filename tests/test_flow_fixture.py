@@ -1,6 +1,8 @@
 import importlib.util
 import json
 from pathlib import Path
+import re
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -47,3 +49,11 @@ class FlowFixtureTest(unittest.TestCase):
         for args in filters:
             self.assertEqual(args[-1], 'veth-fixture')
             self.assertEqual(args[args.index('id') + 1], '3079')
+
+    def test_exit_tls_material_generates_cert_key_and_pin(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cert_lines, key_lines, pin_sha256 = flow.exit_tls_material(Path(directory))
+        self.assertEqual(cert_lines[0], '-----BEGIN CERTIFICATE-----')
+        self.assertEqual(cert_lines[-1], '-----END CERTIFICATE-----')
+        self.assertIn('PRIVATE KEY', key_lines[0])
+        self.assertRegex(pin_sha256, re.compile(r'^[0-9a-f]{64}$'))
