@@ -17,9 +17,22 @@ mkdir -p /var/lock /var/run /var/state /tmp/.uci /tmp/apk-cache
 # Keep verified indexes across the signed online and local-only transactions.
 apk() { command apk --cache-dir /tmp/apk-cache "$@"; }
 metadata=/usr/share/landscape-openwrt/install-inputs.json
-# System APK feeds use USTC; retain official package signature verification.
-sed -i 's|https://downloads.immortalwrt.org|https://mirrors.ustc.edu.cn/immortalwrt|g' \
-    /etc/apk/repositories.d/distfeeds.list
+distfeeds=/etc/apk/repositories.d/distfeeds.list
+# System APK feeds default to the USTC mirror for faster downloads in China;
+# package signature verification is unaffected by the host. Overseas CI
+# runners regularly see truncated responses from that mirror (wget "unexpected
+# end of file"), so keep the official host as a fallback for every apk call.
+official=https://downloads.immortalwrt.org
+mirror=https://mirrors.ustc.edu.cn/immortalwrt
+cp "$distfeeds" /tmp/distfeeds.official
+restore_official_feeds() {
+    if grep -q "$mirror" "$distfeeds"; then
+        echo "::warning::mirror $mirror keeps failing, retrying with $official" >&2
+        cp /tmp/distfeeds.official "$distfeeds"
+        apk --update-cache update || true
+    fi
+}
+sed -i "s|$official|$mirror|g" "$distfeeds"
 for item in passwall passwall_i18n; do
     file=/tmp/packages/passwall.apk
     [ "$item" != passwall_i18n ] || file=/tmp/packages/passwall-zh.apk
@@ -68,9 +81,15 @@ while IFS= read -r package; do
 done < /tmp/passwall-packages.txt
 # Signature verification stays enabled for every downloaded dependency.
 # shellcheck disable=SC2086
-apk_retry --update-cache add $deps "$@" haproxy kmod-nft-tproxy kmod-nft-socket \
+if ! apk_retry --update-cache add $deps "$@" haproxy kmod-nft-tproxy kmod-nft-socket \
     kmod-nft-nat kmod-nf-reject kmod-nf-reject6 \
-    bash unzip openssl-util shadow-chpasswd zoneinfo-all
+    bash unzip openssl-util shadow-chpasswd zoneinfo-all; then
+    restore_official_feeds
+    # shellcheck disable=SC2086
+    apk_retry --update-cache add $deps "$@" haproxy kmod-nft-tproxy kmod-nft-socket \
+        kmod-nft-nat kmod-nf-reject kmod-nf-reject6 \
+        bash unzip openssl-util shadow-chpasswd zoneinfo-all
+fi
 # These two upstream release APKs are authenticated by their GitHub SHA256 above.
 # Limit the trust exception to an offline transaction: no unsigned remote feeds.
 apk --no-network --allow-untrusted add /tmp/packages/passwall.apk /tmp/packages/passwall-zh.apk
@@ -105,4 +124,5 @@ mkdir -p /usr/share/landscape-openwrt/config
 cp /etc/config/uhttpd /etc/config/dropbear /usr/share/landscape-openwrt/config/
 cp /tmp/passwall-packages.txt /usr/share/landscape-openwrt/passwall-packages.txt
 rm -rf /tmp/packages /tmp/install-packages.sh /tmp/passwall-metadata.json \
-    /tmp/passwall-packages.txt /tmp/passwall-feed.adb /tmp/passwall-feed.json /tmp/apk-cache /var/cache/apk
+    /tmp/passwall-packages.txt /tmp/passwall-feed.adb /tmp/passwall-feed.json \
+    /tmp/apk-cache /tmp/distfeeds.official /var/cache/apk
